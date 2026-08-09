@@ -4,7 +4,7 @@
 
 ---
 
-## 1. Zwitserland — opentransportdata.swiss ⬅ nodig voor vertragingskaart (CH)
+## 1. Zwitserland — opentransportdata.swiss — ✅ GEDAAN (2026-08-09, CH live op de kaart; Train Formation- en OJP Fare-keys liggen klaar in .env voor fase 2)
 
 - [ ] Account aanmaken op **https://api-manager.opentransportdata.swiss/** (e-mail, naam, wachtwoord min. 12 tekens met cijfer + speciaal teken)
 - [ ] Daarna: "application" aanmaken → API kiezen → "Access with this plan" → token. **Max. 1 token per API**; wij hebben er straks meerdere nodig (GTFS-RT; later OJP, Train Formation, OJP Fare)

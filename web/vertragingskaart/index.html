@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Reisplan — vertragingskaart</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="kaart"></div>
+
+  <div id="paneel">
+    <h1>Vertragingskaart</h1>
+    <div id="snapshot-leeftijd">wacht op snapshot…</div>
+    <div id="dekking"></div>
+    <div class="legenda">
+      <div><span class="lijn" style="background:#0ca30c"></span> geen opgelopen vertraging</div>
+      <div><span class="lijn" style="background:#fab219"></span> tot 2 min opgelopen</div>
+      <div><span class="lijn" style="background:#ec835a"></span> tot 10 min opgelopen</div>
+      <div><span class="lijn" style="background:#d03b3b"></span> meer dan 10 min</div>
+      <div><span class="lijn" style="background:#9a9a97"></span> geen recente waarneming</div>
+    </div>
+    <div class="voetnoot">kleur = p90 van de vertraging die treinen de afgelopen 30 min
+      <em>op dat baanvak</em> opliepen · data © vervoerders via OVapi / transport.data.gouv.fr
+      · kaart © OpenStreetMap</div>
+  </div>
+
+  <div id="tooltip" hidden></div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

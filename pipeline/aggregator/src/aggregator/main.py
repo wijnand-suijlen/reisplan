@@ -21,6 +21,7 @@ class Bron:
     def __init__(self, cfg):
         self.cfg = cfg
         self.volgende = 0.0
+        self.volgende_alerts = 0.0
         self.backoff = cfg.interval_s
         self.laatste_ok: float | None = None
         self.last_modified: dict[str, str] = {}
@@ -35,11 +36,12 @@ class Bron:
                     seg_obs, stop_obs = verwerk_tripupdates(pb, cfg.feed_prefix, statisch)
                     nieuw = opslag.bewaar(cfg.land, seg_obs, stop_obs)
                     log.info("%s: %d segment-obs, %d gewijzigde stop-obs", cfg.land, len(seg_obs), nieuw)
-            if cfg.alerts_url:
+            if cfg.alerts_url and time.time() >= self.volgende_alerts:
                 pb = self._haal(cfg.alerts_url, cfg.alerts_headers)
                 if pb is not None:
                     self.incidenten = verwerk_alerts(pb, cfg.feed_prefix, cfg.land, statisch)
                     log.info("%s: %d alerts", cfg.land, len(self.incidenten))
+                self.volgende_alerts = time.time() + (cfg.alerts_interval_s or cfg.interval_s)
             self.laatste_ok = time.time()
             self.backoff = cfg.interval_s
         except Exception as e:

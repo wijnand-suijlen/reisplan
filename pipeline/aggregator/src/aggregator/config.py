@@ -34,6 +34,7 @@ class SourceConfig:
     enabled: bool
     status: str               # "ok"/"uit"/"geen-bron" voor het dekkingspaneel
     alerts_headers: dict | None = None  # CH geeft per API een eigen key; None = zelfde als headers
+    alerts_interval_s: int | None = None  # None = elke TU-cyclus; CH-SA is 18 MB JSON, dus trager pollen
 
 
 def bronnen() -> list[SourceConfig]:
@@ -56,9 +57,10 @@ def bronnen() -> list[SourceConfig]:
         SourceConfig(
             land="ch", feed_prefix="ch",
             tu_url=os.environ.get("CH_TU_URL", "https://api.opentransportdata.swiss/la/gtfs-rt"),
-            alerts_url=os.environ.get("CH_SA_URL", "https://api.opentransportdata.swiss/la/gtfs-sa")
-            if os.environ.get("CH_SA_KEY") else None,
+            alerts_url=os.environ.get("CH_SA_URL", "https://api.opentransportdata.swiss/la/gtfs-sa?format=JSON")
+            if os.environ.get("CH_SA_KEY") else None,  # de protobuf-variant van dit endpoint is corrupt; JSON werkt
             interval_s=90,
+            alerts_interval_s=600,
             headers={"User-Agent": USER_AGENT, "Authorization": f"Bearer {ch_key}"} if ch_key else {},
             alerts_headers={"User-Agent": USER_AGENT, "Authorization": f"Bearer {os.environ.get('CH_SA_KEY')}"}
             if os.environ.get("CH_SA_KEY") else None,

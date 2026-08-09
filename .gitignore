@@ -1,0 +1,9 @@
+data/
+web/vertragingskaart/data/
+.env
+*.zip
+__pycache__/
+.venv/
+*.duckdb
+*.sqlite
+.DS_Store

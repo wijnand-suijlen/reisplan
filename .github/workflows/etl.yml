@@ -1,0 +1,55 @@
+name: dataset-etl
+
+# Dagelijkse ETL: zes GTFS-feeds -> rail-only merge -> gecomprimeerde dataset (~35 MB).
+# Draait na de OVapi-update van ~03:00 UTC. v0 hergebruikt de spike-scripts;
+# een opgeschoonde productie-ETL (dienstdag-bewuste dedup enz.) volgt in fase 1.
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  bouw:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Dependencies
+        run: uv sync --all-packages
+
+      - name: Download feeds (NL/BE/FR/DE/CH)
+        run: uv run spike/s0_download.py
+
+      - name: Rail-filter
+        run: uv run spike/s2_filter_rail.py
+
+      - name: Merge + stationsdeduplicatie
+        run: uv run spike/s3_merge_dedup.py
+
+      - name: Comprimeren
+        run: uv run spike/s5_compress.py
+
+      - name: Segments-geojson (voor de vertragingskaart)
+        run: uv run maak-segmenten
+
+      - name: Dataset publiceren als artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dataset
+          path: |
+            data/export/dataset.tar.zst
+            web/vertragingskaart/data/segments.geojson
+          retention-days: 14
+
+      - name: Metingen publiceren (monitoring)
+        uses: actions/upload-artifact@v4
+        with:
+          name: metingen
+          path: |
+            data/metingen.csv
+            data/rapporten/
+          retention-days: 14

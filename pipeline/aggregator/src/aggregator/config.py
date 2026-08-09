@@ -69,7 +69,7 @@ def bronnen() -> list[SourceConfig]:
             tu_url=os.environ.get("BE_TU_URL"),  # invullen na registratie belgianmobility
             alerts_url=os.environ.get("BE_ALERTS_URL"),
             interval_s=60,
-            headers={"User-Agent": USER_AGENT, "Ocp-Apim-Subscription-Key": be_key} if be_key else {},
+            headers={"User-Agent": USER_AGENT, "bmc-partner-key": be_key} if be_key else {},
             enabled=bool(be_key and os.environ.get("BE_TU_URL")), status="ok" if be_key else "uit",
         ),
         SourceConfig(

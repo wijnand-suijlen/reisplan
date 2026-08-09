@@ -5,11 +5,34 @@ GTFS-RT propageert een delay impliciet naar volgende stops, en impliciete paren 
 per definitie delta 0 — die zouden het beeld vervuilen.
 """
 
+import json
 from dataclasses import dataclass
 
+from google.protobuf import json_format
 from google.transit import gtfs_realtime_pb2
 
 from .statisch import Statisch, segment_id
+
+
+def _ontlong(obj):
+    """BE serialiseert int64 als JavaScript-Long-object {low, high, unsigned} — terug naar int."""
+    if isinstance(obj, dict):
+        if set(obj) >= {"low", "high"} and isinstance(obj.get("low"), int):
+            return obj["low"] + (obj["high"] << 32)
+        return {k: _ontlong(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_ontlong(v) for v in obj]
+    return obj
+
+
+def parse_feed(data: bytes) -> gtfs_realtime_pb2.FeedMessage:
+    """GTFS-RT als protobuf óf als JSON-codering (BE levert alleen JSON, met Long-objecten)."""
+    feed = gtfs_realtime_pb2.FeedMessage()
+    if data[:1] in (b"{", b" "):
+        json_format.ParseDict(_ontlong(json.loads(data)), feed, ignore_unknown_fields=True)
+    else:
+        feed.ParseFromString(data)
+    return feed
 
 
 @dataclass
@@ -35,8 +58,7 @@ def _delay(stu) -> int | None:
 
 
 def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
-    feed = gtfs_realtime_pb2.FeedMessage()
-    feed.ParseFromString(pb_bytes)
+    feed = parse_feed(pb_bytes)
     seg_obs: list[SegObs] = []
     stop_obs: list[StopObs] = []
     for ent in feed.entity:

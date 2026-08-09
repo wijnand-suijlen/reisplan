@@ -2,6 +2,7 @@
 
 from google.transit import gtfs_realtime_pb2
 
+from .delta import parse_feed
 from .statisch import Statisch
 
 TAALVOORKEUR = ["nl", "fr", "de", "en"]
@@ -16,8 +17,7 @@ def _tekst(vert) -> str:
 
 
 def verwerk_alerts(pb_bytes: bytes, feed_prefix: str, land: str, statisch: Statisch) -> list[dict]:
-    feed = gtfs_realtime_pb2.FeedMessage()
-    feed.ParseFromString(pb_bytes)
+    feed = parse_feed(pb_bytes)
     incidenten = []
     for ent in feed.entity:
         if not ent.HasField("alert"):

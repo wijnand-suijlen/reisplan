@@ -17,7 +17,7 @@
 - Geen aansprakelijkheid/garantie; misbruik ⇒ directe ban.
 - Losse GTFS-bestandsdownloads blijven registratievrij — de key is alleen voor de API's.
 
-## 2. België — data.belgianmobility.io ⬅ nodig voor vertragingskaart (BE)
+## 2. België — data.belgianmobility.io — ✅ GEDAAN (2026-08-09, BE live op de kaart)
 
 Goed nieuws: de oude route met ondertekende NMBS-licentie is vervangen door een self-service portaal van de Belgian Mobility Company (NMBS + De Lijn + STIB + TEC in één).
 

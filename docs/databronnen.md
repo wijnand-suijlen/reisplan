@@ -27,7 +27,7 @@ Aandachtspunten:
 | NL | NS Reisinformatie API (apiportal.ns.nl): trips, arrivals/departures, disruptions | registratie + key | ±5.000 req/dag (free; niet hard geverifieerd, catalogus achter login) | officieel, hoog |
 | NL | OVapi GTFS-RT (tripupdates, vehiclePositions, alerts) | vrij; User-Agent + If-Modified-Since verplicht | — | data hoog; continuïteit middel (stichting, geen SLA) |
 | NL | NDOV Loket (InfoPlus DVS/rit-info, ZeroMQ push) | registratie + overeenkomst, gratis | — | rijkste bron (spoorwijziging, vleugeltreinen); bewerkelijk |
-| BE | NMBS officiële GTFS-RT (trip updates elke 30 s + alerts) via data.belgianmobility.io | registratie + licentie-acceptatie | — | officieel, hoog (portaalinhoud niet extern geverifieerd) |
+| BE | NMBS officiële GTFS-RT (trip updates elke 30 s + alerts) via data.belgianmobility.io | registratie + key | Standard-tier 12.000 req/dag | officieel, hoog. **Empirisch (2026-08-09)**: host `api-management-opendata-production.azure-api.net`, key-header **`bmc-partner-key`** (niet Ocp-Apim), levert alléén JSON (geen protobuf), met int64's als JS-Long-objecten `{low,high,unsigned}` — aggregator normaliseert dit |
 | BE | iRail API (liveboard, connections, vehicle, disturbances) | vrij | 3 req/s per IP | onofficieel maar >10 jaar stabiel; middel |
 | FR | GTFS-RT trip updates + alerts via proxy.transport.data.gouv.fr (TGV+IC+TER) | vrij | update elke 2 min; **alleen treinen die binnen 60 min rijden** | hoog beschikbaar, beperkte horizon |
 | FR | SNCF API (api.sncf.com, Navitia) | token via e-mail | 5.000 req/dag free | middel-hoog; strategische toekomst onzeker |

@@ -36,7 +36,7 @@ class Bron:
                     nieuw = opslag.bewaar(cfg.land, seg_obs, stop_obs)
                     log.info("%s: %d segment-obs, %d gewijzigde stop-obs", cfg.land, len(seg_obs), nieuw)
             if cfg.alerts_url:
-                pb = self._haal(cfg.alerts_url)
+                pb = self._haal(cfg.alerts_url, cfg.alerts_headers)
                 if pb is not None:
                     self.incidenten = verwerk_alerts(pb, cfg.feed_prefix, cfg.land, statisch)
                     log.info("%s: %d alerts", cfg.land, len(self.incidenten))
@@ -47,8 +47,8 @@ class Bron:
             self.backoff = min(self.backoff * 2, MAX_BACKOFF_S)
         self.volgende = time.time() + self.backoff
 
-    def _haal(self, url: str) -> bytes | None:
-        headers = dict(self.cfg.headers)
+    def _haal(self, url: str, headers_override: dict | None = None) -> bytes | None:
+        headers = dict(headers_override if headers_override is not None else self.cfg.headers)
         if url in self.last_modified:
             headers["If-Modified-Since"] = self.last_modified[url]
         r = requests.get(url, headers=headers, timeout=30)

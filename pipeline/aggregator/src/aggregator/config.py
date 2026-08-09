@@ -30,9 +30,10 @@ class SourceConfig:
     tu_url: str | None        # GTFS-RT trip updates
     alerts_url: str | None    # GTFS-RT service alerts
     interval_s: int
-    headers: dict
+    headers: dict             # voor de trip-updates-URL
     enabled: bool
     status: str               # "ok"/"uit"/"geen-bron" voor het dekkingspaneel
+    alerts_headers: dict | None = None  # CH geeft per API een eigen key; None = zelfde als headers
 
 
 def bronnen() -> list[SourceConfig]:
@@ -54,10 +55,13 @@ def bronnen() -> list[SourceConfig]:
         ),
         SourceConfig(
             land="ch", feed_prefix="ch",
-            tu_url=os.environ.get("CH_TU_URL", "https://api.opentransportdata.swiss/la/gtfs-rt?format=protobuf"),
-            alerts_url=None,
+            tu_url=os.environ.get("CH_TU_URL", "https://api.opentransportdata.swiss/la/gtfs-rt"),
+            alerts_url=os.environ.get("CH_SA_URL", "https://api.opentransportdata.swiss/la/gtfs-sa")
+            if os.environ.get("CH_SA_KEY") else None,
             interval_s=90,
             headers={"User-Agent": USER_AGENT, "Authorization": f"Bearer {ch_key}"} if ch_key else {},
+            alerts_headers={"User-Agent": USER_AGENT, "Authorization": f"Bearer {os.environ.get('CH_SA_KEY')}"}
+            if os.environ.get("CH_SA_KEY") else None,
             enabled=bool(ch_key), status="ok" if ch_key else "uit",
         ),
         SourceConfig(

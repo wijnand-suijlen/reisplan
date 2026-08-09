@@ -120,7 +120,7 @@ Prijs kent twee niveaus van waarheid: **prijsindicatie** (uit tariefregels berek
 
 **Fase 0 — spike: datapijplijn-prototype op de laptop** *(zie §8)*
 
-**Fase 0.5 — vertragingskaart (realtime netwerkvisualisatie)** *(toegevoegd 2026-08-09 op verzoek eigenaar)*
+**Fase 0.5 — vertragingskaart (realtime netwerkvisualisatie)** *(toegevoegd én gebouwd 2026-08-09; NL+FR live, BE/CH wachten op keys — zie TODO.md. Aggregator: `uv run aggregator`; viewer: `python3 -m http.server 8137 -d web/vertragingskaart` → http://localhost:8137. Live geverifieerd tegen rijdendetreinen.nl: de storing Utrecht–Geldermalsen kleurde correct oranje. NB: OVapi-treinen zitten in `trainUpdates.pb`, niet in `tripUpdates.pb`.)*
 
 Live kaart van alle spoorlijnen in de vijf landen, gekleurd naar **opgelopen vertraging per baanvak**: groen = geen, geel = tot 2 min, oranje = tot 10 min, rood = meer; met oorzaak-icoontjes bij incidenten (à la file-/ongevalsiconen in autonavigatie).
 

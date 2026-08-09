@@ -253,6 +253,9 @@ def main():
     t0 = time.monotonic()
     MERGED.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(MERGED / "merged.duckdb"))
+    import os
+    if os.environ.get("REISPLAN_DUCKDB_MEM"):  # kleine VM's: spillen i.p.v. swappen
+        con.execute(f"SET memory_limit='{os.environ['REISPLAN_DUCKDB_MEM']}'")
     merge(con)
     rows = bouw_stations(con)
     cluster_stations(con, rows)

@@ -1,0 +1,16 @@
+[Unit]
+Description=Reisplan realtime-aggregator (vertragingskaart + punctualiteitscollector)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@REPO@
+ExecStart=@UV@ run aggregator
+Restart=always
+RestartSec=30
+# .env wordt door de aggregator zelf gelezen; niets geheims in deze unit.
+
+[Install]
+WantedBy=multi-user.target

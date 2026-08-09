@@ -1,0 +1,14 @@
+[Unit]
+Description=Reisplan statische data vernieuwen (feeds -> merge -> segments)
+# De aggregator leest merged.duckdb alleen bij start; na verversing herstarten we hem.
+
+[Service]
+Type=oneshot
+User=@USER@
+WorkingDirectory=@REPO@
+Environment=REISPLAN_DUCKDB_MEM=600MB
+ExecStart=@UV@ run spike/s0_download.py
+ExecStart=@UV@ run spike/s2_filter_rail.py
+ExecStart=@UV@ run spike/s3_merge_dedup.py
+ExecStart=@UV@ run maak-segmenten
+ExecStartPost=+/usr/bin/systemctl restart reisplan-aggregator.service

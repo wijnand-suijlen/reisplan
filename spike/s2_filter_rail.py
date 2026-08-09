@@ -53,6 +53,9 @@ def schrijf(con, feed, naam):
 def filter_feed(feed):
     map_ = RAW / feed
     con = duckdb.connect()
+    import os
+    if os.environ.get("REISPLAN_DUCKDB_MEM"):  # kleine VM's: spillen i.p.v. swappen
+        con.execute(f"SET memory_limit='{os.environ['REISPLAN_DUCKDB_MEM']}'")
     t0 = time.monotonic()
 
     for naam in ["routes", "trips", "stop_times", "stops", "agency"]:

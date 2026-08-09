@@ -6,8 +6,9 @@ import time
 
 import requests
 
+from . import r2
 from .alerts import verwerk_alerts
-from .config import bronnen
+from .config import WEB_DATA, bronnen
 from .delta import verwerk_tripupdates
 from .opslag import Opslag
 from .snapshot import bouw_snapshot, schrijf_snapshot
@@ -75,9 +76,17 @@ def main() -> None:
     opslag = Opslag()
     actief = [Bron(cfg) for cfg in bronnen()]
     log.info(
-        "gestart; bronnen: %s",
+        "gestart; bronnen: %s; R2-upload: %s",
         ", ".join(f"{b.cfg.land}={'aan' if b.cfg.enabled else b.cfg.status}" for b in actief),
+        "aan" if r2.actief() else "uit",
     )
+    if r2.actief() and (WEB_DATA / "segments.geojson").exists():
+        try:
+            r2.upload("segments.geojson", (WEB_DATA / "segments.geojson").read_bytes(),
+                      "application/geo+json", cache_s=3600)
+            log.info("segments.geojson naar R2 geüpload")
+        except Exception as e:
+            log.warning("R2-upload segments mislukt: %s", e)
     volgende_snapshot = 0.0
     while True:
         nu = time.time()
@@ -88,8 +97,12 @@ def main() -> None:
             dekking = {b.cfg.land: b.dekking() for b in actief}
             incidenten = [i for b in actief for i in b.incidenten]
             snap = bouw_snapshot(dekking, opslag.venster(1800), incidenten)
-            grootte = schrijf_snapshot(snap)
-            log.info("snapshot: %d segmenten, %d incidenten, %d bytes", len(snap["seg"]), len(snap["inc"]), grootte)
+            data = schrijf_snapshot(snap)
+            try:
+                r2.upload("snapshot.json", data, "application/json")
+            except Exception as e:
+                log.warning("R2-upload snapshot mislukt: %s", e)
+            log.info("snapshot: %d segmenten, %d incidenten, %d bytes", len(snap["seg"]), len(snap["inc"]), len(data))
             volgende_snapshot = nu + 60
         time.sleep(1)
 

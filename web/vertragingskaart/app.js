@@ -8,6 +8,8 @@ const CAUSE_ICOON = {
   DEMONSTRATION: "📢", HOLIDAY: "📅", UNKNOWN_CAUSE: "⚠️", OTHER_CAUSE: "⚠️",
 };
 const LAND_NAAM = { nl: "NL", be: "BE", fr: "FR", de: "DE", ch: "CH" };
+// Databron: lokaal "data/", of een externe basis-URL (bv. R2) via ?data=https://…/
+const DATA_BASE = new URLSearchParams(location.search).get("data") || "data/";
 
 const kaart = new maplibregl.Map({
   container: "kaart",
@@ -35,7 +37,7 @@ const kaart = new maplibregl.Map({
 let bekendeSegmenten = new Set();
 
 kaart.on("load", async () => {
-  kaart.addSource("segmenten", { type: "geojson", data: "data/segments.geojson", promoteId: "id" });
+  kaart.addSource("segmenten", { type: "geojson", data: `${DATA_BASE}segments.geojson`, promoteId: "id" });
 
   // witte casing = scheiding van de drukke basemap
   kaart.addLayer({
@@ -63,7 +65,7 @@ kaart.on("load", async () => {
 async function ververs() {
   let snap;
   try {
-    snap = await (await fetch(`data/snapshot.json?t=${Date.now()}`)).json();
+    snap = await (await fetch(`${DATA_BASE}snapshot.json?t=${Date.now()}`)).json();
   } catch {
     document.getElementById("snapshot-leeftijd").textContent = "snapshot niet bereikbaar";
     return;

@@ -53,3 +53,15 @@ jobs:
             data/metingen.csv
             data/rapporten/
           retention-days: 14
+
+      - name: Upload naar R2 (alleen als secrets gezet zijn)
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: |
+          if [ -z "$R2_ENDPOINT" ]; then echo "R2 niet geconfigureerd — overslaan"; exit 0; fi
+          aws s3 cp data/export/dataset.tar.zst "s3://$R2_BUCKET/dataset.tar.zst" --endpoint-url "$R2_ENDPOINT"
+          aws s3 cp web/vertragingskaart/data/segments.geojson "s3://$R2_BUCKET/segments.geojson" \
+            --endpoint-url "$R2_ENDPOINT" --content-type application/geo+json --cache-control max-age=3600

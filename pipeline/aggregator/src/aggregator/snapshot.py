@@ -32,7 +32,7 @@ def bouw_snapshot(dekking: dict, venster: dict, incidenten: list[dict]) -> dict:
     }
 
 
-def schrijf_snapshot(snap: dict) -> int:
+def schrijf_snapshot(snap: dict) -> bytes:
     WEB_DATA.mkdir(parents=True, exist_ok=True)
     data = json.dumps(snap, separators=(",", ":")).encode()
     tmp = WEB_DATA / "snapshot.json.tmp"
@@ -43,4 +43,4 @@ def schrijf_snapshot(snap: dict) -> int:
     archiefmap = RT_ARCHIEF / "snapshots" / time.strftime("%Y/%m/%d", nu)
     archiefmap.mkdir(parents=True, exist_ok=True)
     (archiefmap / time.strftime("%H%M.json.gz", nu)).write_bytes(gzip.compress(data))
-    return len(data)
+    return data

@@ -170,7 +170,9 @@ Aanpak:
 
 ## 8. Fase 0 — spike: datapijplijn-prototype (op de laptop)
 
-Doel: de kernaannames valideren vóór er iets aan de app gebouwd wordt.
+**✅ Uitgevoerd 2026-08-09 — alle zes vragen beantwoord in `docs/SPIKE-RESULTATEN.md`.** Kernuitkomsten: dataset 35 MB (tar.zst), ETL < 4 min / 2,3 GB piek (past ruim in GitHub Actions → hostingbesluit §7.1 bevestigd), naïeve RAPTOR 0–41 ms per query (on-device ruim haalbaar), Eurostar zit in de NL-feed (incl. Londen), geen enkele verwachte internationale dienst ontbreekt volledig, en de FR GTFS-RT wordt níet gearchiveerd door transport.data.gouv.fr (eigen collector noodzakelijk).
+
+Doel was: de kernaannames valideren vóór er iets aan de app gebouwd wordt.
 
 Vragen die de spike moet beantwoorden:
 1. Hoe groot zijn de vijf GTFS-feeds werkelijk (download én uitgepakt), en hoeveel blijft er over na filteren op treinverkeer?

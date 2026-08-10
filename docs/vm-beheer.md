@@ -18,7 +18,7 @@ systemctl status reisplan-aggregator        # draait hij?
 systemctl list-timers reisplan-statisch.timer   # wanneer is de volgende verversing?
 ```
 
-Gezond log = een startregel met `nl=aan, fr=aan, ch=aan, be=aan` en `R2-upload: aan`, en elke minuut een `snapshot: <10000+> segmenten`-regel. Losse `WARNING … poll mislukt … backoff`-regels zijn normaal (haperende feed, herstelt zichzelf); pas verdacht als één bron het úren blijft doen.
+Gezond log = een startregel met `nl=aan, fr=aan, ch=aan, be=aan, de=aan` en `R2-upload: aan`, elke minuut een `snapshot: <10000+> segmenten`-regel, en om de paar seconden een `de: N stations, …`-regel (de DE-bron pollt de DB Timetables API per station). Losse `WARNING … poll mislukt … backoff`-regels zijn normaal (haperende feed, herstelt zichzelf); pas verdacht als één bron het úren blijft doen. Dagelijks hoort er één `archive: exported YYYY-MM-DD …`-regel bij (parquet-backup naar R2).
 
 ## Ingrijpen
 
@@ -35,7 +35,7 @@ Alleen code bijwerken zonder volledige dataverversing:
 cd ~/reisplan && git pull && uv sync --all-packages && sudo systemctl restart reisplan-aggregator
 ```
 
-API-keys wijzigen: `nano ~/reisplan/.env`, daarna de aggregator herstarten.
+API-keys wijzigen: `nano ~/reisplan/.env`, daarna de aggregator herstarten. Voor de DE-bron (DB Timetables) horen er `DB_CLIENT_ID=` en `DB_API_KEY=` in te staan; de bron heeft ook `data/merged/eva_stations.json` nodig (bouwt de wekelijkse verversing via spike/s10, of eenmalig handmatig: `uv run spike/s10_station_eva_map.py`).
 
 ## Controle op afstand (vanaf laptop/telefoon, zonder SSH)
 
@@ -52,11 +52,7 @@ free -h                                      # geheugen + swap
 
 Het archief (observaties + snapshot-history) groeit met enkele MB's per dag; dat past jaren. Wordt de schijf ooit toch krap: oude maanden snapshot-archief zijn veilig weg te gooien (`rm -r ~/reisplan/data/rt-archief/snapshots/2026/08` bijvoorbeeld) — **`observaties.sqlite` bewaren**, dat is de punctualiteitsstatistiek voor fase 2.
 
-Archief veiligstellen naar je laptop (vanaf de laptop, met [gcloud CLI](https://cloud.google.com/sdk); of handmatig via de SSH-browserknop downloaden):
-
-```bash
-gcloud compute scp <instance-naam>:~/reisplan/data/rt-archief/observaties.sqlite ./backup/
-```
+**Backup is sinds 2026-08-10 automatisch**: de aggregator exporteert elke afgesloten dag als parquet naar R2 (`rt-archive/seg/<dag>.parquet` en `rt-archive/stops/<dag>.parquet`; gzip-gecodeerd, dus na een rauwe download eerst gunzippen). Handmatig scp'en hoeft niet meer; controleer af en toe of de `archive: exported`-regels in het log verschijnen. Na VM-downtime vult de export zichzelf aan (max 40 dagen per keer).
 
 ## Als het echt stuk is
 

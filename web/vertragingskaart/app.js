@@ -91,8 +91,8 @@ async function ververs() {
 
   document.getElementById("dekking").innerHTML = Object.entries(snap.dekking)
     .map(([land, d]) => {
-      const st = d.status === "ok" && d.age_s > 300 ? "oud" : d.status;
-      const label = { ok: "live", wacht: "wacht", uit: "uit (key)", "geen-bron": "geen bron", oud: "verouderd" }[st] || st;
+      const st = (d.status === "ok" || d.status === "deels") && d.age_s > 300 ? "oud" : d.status;
+      const label = { ok: "live", deels: "live (knooppunten)", wacht: "wacht", uit: "uit (key)", "geen-bron": "geen bron", oud: "verouderd" }[st] || st;
       return `<span class="land st-${st.replace(" ", "-")}"><span class="stip"></span>${LAND_NAAM[land] || land} ${label}</span>`;
     })
     .join("");

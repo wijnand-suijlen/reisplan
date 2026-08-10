@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[4]  # repo-root
 DATA = ROOT / "data"
 RT_ARCHIEF = DATA / "rt-archief"
 MERGED_DB = DATA / "merged" / "merged.duckdb"
+EVA_STATIONS = DATA / "merged" / "eva_stations.json"  # built by spike/s10
 WEB_DATA = ROOT / "web" / "vertragingskaart" / "data"
 
 USER_AGENT = "reisplan-aggregator/0.1 (hobbyproject; wijnand.suijlen@proton.me)"
@@ -35,12 +36,15 @@ class SourceConfig:
     status: str               # "ok"/"uit"/"geen-bron" voor het dekkingspaneel
     alerts_headers: dict | None = None  # CH geeft per API een eigen key; None = zelfde als headers
     alerts_interval_s: int | None = None  # None = elke TU-cyclus; CH-SA is 18 MB JSON, dus trager pollen
+    kind: str = "gtfs-rt"     # "gtfs-rt" | "db-timetables" (DE: station-based IRIS polling)
 
 
 def bronnen() -> list[SourceConfig]:
     laad_env()
     ch_key = os.environ.get("CH_API_KEY")
     be_key = os.environ.get("BE_API_KEY")
+    db_id = os.environ.get("DB_CLIENT_ID")
+    db_key = os.environ.get("DB_API_KEY")
     return [
         SourceConfig(
             land="nl", feed_prefix="nl",
@@ -75,8 +79,15 @@ def bronnen() -> list[SourceConfig]:
             enabled=bool(be_key and os.environ.get("BE_TU_URL")), status="ok" if be_key else "uit",
         ),
         SourceConfig(
+            # No nationwide DE GTFS-RT exists; this source polls the DB Timetables API
+            # per station (see db_timetables.py). Partial coverage by design.
             land="de", feed_prefix="de_rv",
-            tu_url=None, alerts_url=None, interval_s=0, headers={},
-            enabled=False, status="geen-bron",
+            tu_url=None, alerts_url=None, interval_s=10,
+            headers={"DB-Client-Id": db_id, "DB-Api-Key": db_key,
+                     "Accept": "application/xml", "User-Agent": USER_AGENT}
+            if db_id and db_key else {},
+            enabled=bool(db_id and db_key),
+            status="ok" if db_id and db_key else "uit",
+            kind="db-timetables",
         ),
     ]

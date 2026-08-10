@@ -130,7 +130,7 @@ Aanpak:
 3. **Oorzaken**: GTFS-RT service alerts (cause-enum: ACCIDENT, STRIKE, WEATHER, …) + NS-storingen-API (rijke NL-oorzaken); mapping naar iconen, plaatsing per getroffen route/station (heuristiek).
 4. **Architectuur**: de realtime-proxy wordt een **aggregator**: pollt elke 1–2 min alle landenfeeds (respecteert per-feed rate limits, bv. CH 5 req/min) en publiceert één compact netwerktoestand-snapshot (tientallen KB gzipped); clients pollen alleen dat snapshot. **Synergie**: snapshots archiveren = de FR/BE-punctualiteitscollector uit §3.1 — zelfde component, twee doelen.
 5. **Oplevervorm**: eerst als webpagina (MapLibre GL JS op het snapshot-endpoint) om de keten te valideren vóór er Android-werk is; het app-kaartscherm (fase 1/3) hergebruikt endpoint en stijl.
-6. **Beperking DE**: geen officiële landelijke realtime-feed; opties: DELFI/SIRI (achter registratie, inhoud verifiëren), roulerend de grootste stations via Timetables-API (60 req/min), of fragiel vendo. DE-dekking is in eerste instantie grofmaziger — de kaart moet dekkingskwaliteit per land eerlijk tonen.
+6. **Beperking DE**: geen officiële landelijke realtime-feed; opties: DELFI/SIRI (achter registratie, inhoud verifiëren), roulerend de grootste stations via Timetables-API (60 req/min), of fragiel vendo. DE-dekking is in eerste instantie grofmaziger — de kaart moet dekkingskwaliteit per land eerlijk tonen. *Uitgewerkt 2026-08-10 in "Plan: realtime-data loggen + DE op de kaart" hieronder.*
 
 **Verbeterlijst vertragingskaart** *(verzameld tijdens gebruik, 2026-08-10)*:
 1. **Route-highlight bij klik**: klik op een baanvak → licht op welke lijnen/treinseries eroverheen rijden. Voorkomt de misinterpretatie dat aangrenzende gelijkgekleurde baanvakken één treinroute zijn (casus: Stendal–Wittenberge–Berlijn leek één route, maar was IC 57 + Hamburg-corridor + omgeleide Amsterdam–Berlijn-ritten).
@@ -141,6 +141,34 @@ Aanpak:
 5. **Gerealiseerde vs. voorspelde delta's + venstersemantiek**: trip updates bevatten ook voorspellingen voor toekomstige stops; overwegen alleen gepasseerde baanvakken te laten meekleuren, of voorspelling apart te stylen. Verwant: door de wijzigings-dedupe veroudert een stabiele vertraging uit het 30-min-venster terwijl de trein nog rijdt — netter is per actieve trip de laatste bekende delta vast te houden zolang de trip loopt ("grijs" betekent dan echt "geen trein", niet "geen nieuws").
 6. **Drukte-kleurmodus** *(idee eigenaar 2026-08-10)*: schakelbare modus waarin niet vertraging maar treinfrequentie per baanvak de kleur bepaalt, van blauw (weinig) naar rood (druk). Twee varianten mogelijk: gepland (uit de statische dienstregeling, per uur exact te berekenen) en actueel (distinct treinen in het venster — zit al in de tooltip als `n`).
 7. **Blokkade-weergave** *(idee eigenaar 2026-08-10)*: als een baanvak feitelijk versperd is, niet grijs laten wegvallen maar een **rode stippellijn** tekenen (à la wegafsluitingen in autonavigatie) totdat er daadwerkelijk weer een trein overheen rijdt. Detectiesignalen, sterkste eerst: (a) trips op het baanvak gemarkeerd als CANCELED/SKIPPED in de trip updates (casus Tegelen–Reuver: "geen treinen" werd nu onzichtbaar grijs); (b) alle actuele treinen op het baanvak ≥30 min vertraagd; (c) alerts met effect NO_SERVICE op de betrokken route/stations. Opheffing pas bij een geréaliseerde passage, niet bij een voorspelling. Vergt gepland-vs-waargenomen-vergelijking per baanvak (de dienstregeling zit al in merged.duckdb) en hangt samen met de venstersemantiek van punt 5.
+
+### Plan: realtime-data loggen + DE op de kaart *(opgesteld 2026-08-10; DB-keys en DELFI-account zijn binnen en getest)*
+
+Twee doelen, één component: (A) het realtime-archief op de VM opwaarderen tot een échte punctualiteitslog, en (B) Duitsland als volwaardige bron op de vertragingskaart via de DB Timetables API (60 req/min, getest 2026-08-10).
+
+**Stap 0 — DELFI-realtime verifiëren** ✅ *(2026-08-10: DELFI biedt géén echtzeitdataset — alleen Sollfahrplandaten en Haltestellendaten. Timetables-rotatie is dus de route.)*
+
+**Stap 1 — stationsset + EVA↔cluster-mapping (eenmalig, ETL).** ✅ *Gebouwd 2026-08-10: `spike/s10_station_eva_map.py` (draait wekelijks mee in vernieuw.sh; output `data/merged/eva_stations.json`). Leerpunten: IRIS-lookup matcht exact (naamvarianten nodig: "S Ostkreuz Bhf (Berlin)"→"Berlin Ostkreuz", stad-prefix uit coördinaten, str.→straße, koppeltekens); sommige hub-EVA's zijn lege hulzen waarvan de data op een meta-EVA zit (Berlin Hbf 8011160 → 8098160) — validatie loopt de meta-lijst af.*
+- De Timetables API is station-gebaseerd en werkt op EVA-nummers; DELFI/merged gebruikt DHID-stop-ids. Eenmalige mappingtabel `eva ↔ cluster_id` in merged.duckdb, te bouwen uit een open DB-stationslijst (StaDa/RIS::Stations of de haltestellen-CSV) met dezelfde naam+afstand-matching als s3.
+- Stationsselectie op basis van rail-tripaantallen per station in de DELFI-data: **Tier A** ±80 FV-/grote knooppunten, **Tier B** ±400 middelgrote knooppunten.
+
+**Stap 2 — DB-Timetables-poller in de aggregator.** ✅ *Gebouwd 2026-08-10 (`db_timetables.py`, Engelstalig conform het nieuwe codetaal-besluit); live getest met de volledige 402-stationsset: 44 req/min (limiet 60), 620 trips gevolgd na 200 s warmup, 65 waargenomen baanvakken waarvan 47 (72%) op getekende randen mappen (155 randen zouden kleuren; wordt meer naarmate meer stations warm zijn). fchg gemeten: 0,07–0,8 MB per station. Mappingdekking: 402 van 480 kandidaat-clusters (rest is tram/U-Bahn, terecht overgeslagen).*
+- Nieuw brontype naast GTFS-RT: XML (IRIS-formaat), per station `/fchg/{eva}` pollen. Cadans: Tier A elke ~5 min, Tier B roulerend elke ~25 min; gemiddeld budget ≤45 req/min (limiet 60), backoff op 429.
+- Trip-matching over stations: het IRIS-stop-id is `-{tripid}-{datum}-{stopindex}` — zelfde tripid op elk station, stopindex geeft de volgorde. Delta per baanvak = delay(B) − delay(A) van opeenvolgende gepollde stations; de bestaande verfijning (expresse-sprong uitsmeren) vult de niet-gepollde tussenstations in.
+- Venstersemantiek (verbeterpunt 5) hier vanaf dag één: fchg bevat ook voorspellingen uren vooruit — alleen (bijna-)gerealiseerde events als seg-obs meetellen, verre voorspellingen niet of apart gevlagd.
+- Absolute delays per station gaan als stop-obs de log in, net als bij de andere landen. Attributie op de kaart: CC BY Deutsche Bahn AG.
+
+**Stap 3 — de log opwaarderen tot punctualiteitsarchief (alle vijf landen).** ✅ *Gebouwd 2026-08-10: `stop_obs2` (met dienstdatum, append-bij-verandering) vervangt de overschrijvende v1-tabel; `archive.py` exporteert afgesloten dagen als parquet naar R2 (`rt-archive/…`), met automatische backfill na downtime.*
+- **Bug/gat**: `stop_obs` heeft PK (land, trip_id, cluster) zonder dienstdatum en overschrijft — dezelfde trein wist morgen zijn vertraging van vandaag. Fix: dienstdatum erbij en appenden-bij-verandering (v2-tabel, oude data laten staan); de definitieve vertraging per (trip, cluster, dienstdag) is straks de basis voor het overstapkans-model van fase 2.
+- **Backup**: afgesloten dienstdagen dagelijks/wekelijks exporteren naar parquet (per land/maand) en uploaden naar R2; `observaties.sqlite` blijft werkvoorraad op de VM. vm-beheer.md bijwerken (het handmatige scp-recept vervalt).
+- Groeischatting blijft MB's/dag; R2 free tier (10 GB) is jaren toereikend.
+
+**Stap 4 — kaart en dekkingspaneel.** ✅ *Gebouwd 2026-08-10: DE-bron aan zodra `DB_CLIENT_ID`/`DB_API_KEY` in .env staan; paneel kent status "deels" ("live (knooppunten)").*
+- DE-bron aan in config (status "ok"), maar het paneel moet dekkingskwaliteit eerlijk tonen: DE is **gedeeltelijk** (FV + knooppunten, geen vlakdekkend RV) — dit lost meteen verbeterpunt 3 (gastdata-nuance) mee op: DE toont dan "eigen bron: knooppunten + doorgaande internationale treinen".
+
+**Risico's/meetpunten**: fchg-responsegrootte per station meten vóór de tier-groottes vastliggen (verwachting 50–300 KB bij grote stations; bepaalt of ~2,3k req/uur qua bandbreedte/CPU op de e2-micro past — verwachting: ruim); DB kan free-limieten eenzijdig wijzigen (ToU); rchg-varianten (elke 2 min, kleiner) zijn een optimalisatie voor later.
+
+**Flankerend, los van realtime**: de statische merge van DE overzetten van gtfs.de op DELFI (nagemeten 2026-08-10: past ruim; geeft ook treinnummers — die maken de IRIS-matching robuuster) en dan s3/s5 herdraaien voor de nieuwe totaalgrootte van de vijflanden-dataset.
 
 **Fase 1 — MVP (Planmodus, 5 landen)**
 1. Backend-ETL: rail-only GTFS van 5 landen mergen tot één compacte dataset (productieversie van de fase-0-spike)

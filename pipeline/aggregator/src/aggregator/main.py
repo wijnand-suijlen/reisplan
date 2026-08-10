@@ -6,9 +6,10 @@ import time
 
 import requests
 
-from . import r2
+from . import archive, r2
 from .alerts import verwerk_alerts
 from .config import WEB_DATA, bronnen
+from .db_timetables import DbTimetablesSource
 from .delta import verwerk_tripupdates
 from .opslag import Opslag
 from .snapshot import bouw_snapshot, schrijf_snapshot
@@ -74,7 +75,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     statisch = Statisch()
     opslag = Opslag()
-    actief = [Bron(cfg) for cfg in bronnen()]
+    actief = [DbTimetablesSource(cfg) if cfg.kind == "db-timetables" else Bron(cfg)
+              for cfg in bronnen()]
     log.info(
         "gestart; bronnen: %s; R2-upload: %s",
         ", ".join(f"{b.cfg.land}={'aan' if b.cfg.enabled else b.cfg.status}" for b in actief),
@@ -116,6 +118,7 @@ def main() -> None:
                 log.warning("R2-upload snapshot mislukt: %s", e)
             log.info("snapshot: %d segmenten, %d incidenten, %d bytes", len(snap["seg"]), len(snap["inc"]), len(data))
             volgende_snapshot = nu + 60
+        archive.run_if_due()
         time.sleep(1)
 
 

@@ -1,7 +1,10 @@
 """SQLite-opslag: dit archief ís de punctualiteitscollector (PLAN.md §3.1).
 
-seg_obs: delta-vertraging per segment-passage; stop_obs: laatst bekende vertraging per
-trip/cluster (alleen appenden bij verandering, om groei te beperken).
+seg_obs: delta-vertraging per segment-passage (append bij verandering).
+stop_obs2: vertragingshistorie per trip/dienstdag/cluster (append bij verandering) —
+de laatste rij per sleutel is de definitieve vertraging, de basis voor fase 2.
+stop_obs (v1) is vervangen: die overschreef per trip en had geen dienstdatum, waardoor
+elke dag de vorige wiste; de tabel blijft alleen als historische data staan.
 """
 
 import sqlite3
@@ -21,6 +24,10 @@ class Opslag:
                CREATE TABLE IF NOT EXISTS stop_obs (
                  ts INT, land TEXT, trip_id TEXT, cluster TEXT, delay_s INT,
                  PRIMARY KEY (land, trip_id, cluster));
+               CREATE TABLE IF NOT EXISTS stop_obs2 (
+                 ts INT, country TEXT, trip_id TEXT, service_date TEXT,
+                 cluster TEXT, delay_s INT);
+               CREATE INDEX IF NOT EXISTS stop_obs2_date ON stop_obs2 (service_date);
             """
         )
         self._laatste: dict[tuple, int] = {}
@@ -43,12 +50,12 @@ class Opslag:
         with self.db:
             self.db.executemany("INSERT INTO seg_obs VALUES (?, ?, ?, ?, ?)", vers)
             for o in stop_obs:
-                sleutel = (land, o.trip_id, o.cluster)
+                sleutel = (land, o.trip_id, o.service_date, o.cluster)
                 if self._laatste.get(sleutel) != o.delay_s:
                     self._laatste[sleutel] = o.delay_s
                     self.db.execute(
-                        "INSERT OR REPLACE INTO stop_obs VALUES (?, ?, ?, ?, ?)",
-                        (ts, land, o.trip_id, o.cluster, o.delay_s),
+                        "INSERT INTO stop_obs2 VALUES (?, ?, ?, ?, ?, ?)",
+                        (ts, land, o.trip_id, o.service_date, o.cluster, o.delay_s),
                     )
                     nieuw += 1
         return nieuw

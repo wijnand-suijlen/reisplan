@@ -6,6 +6,7 @@ per definitie delta 0 — die zouden het beeld vervuilen.
 """
 
 import json
+import time
 from dataclasses import dataclass
 
 from google.protobuf import json_format
@@ -47,6 +48,7 @@ class StopObs:
     trip_id: str
     cluster: str
     delay_s: int
+    service_date: str = ""  # "YYYYMMDD"; keeps days apart in the punctuality log
 
 
 def _delay(stu) -> int | None:
@@ -61,11 +63,13 @@ def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
     feed = parse_feed(pb_bytes)
     seg_obs: list[SegObs] = []
     stop_obs: list[StopObs] = []
+    vandaag = time.strftime("%Y%m%d", time.gmtime())
     for ent in feed.entity:
         if not ent.HasField("trip_update"):
             continue
         tu = ent.trip_update
         trip_id = tu.trip.trip_id
+        service_date = tu.trip.start_date or vandaag  # start_date is not set by every feed
         expliciet = []  # (cluster, delay)
         for stu in tu.stop_time_update:
             d = _delay(stu)
@@ -75,7 +79,7 @@ def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
             if cluster is None:
                 continue
             expliciet.append((cluster, d))
-            stop_obs.append(StopObs(trip_id, cluster, d))
+            stop_obs.append(StopObs(trip_id, cluster, d, service_date))
         for (c1, d1), (c2, d2) in zip(expliciet, expliciet[1:]):
             if c1 != c2:
                 delta = d2 - d1

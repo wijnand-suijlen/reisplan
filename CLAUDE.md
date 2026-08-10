@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Planningsfase — er wordt nog niet geprogrammeerd.** De eigenaar werkt het ontwerp eerst samen met Claude uit. Begin niet met implementeren zonder expliciete opdracht. Build-, test- en lint-commando's worden hier aangevuld zodra de techstack gekozen is.
 
-Voertaal in dit project (documentatie, discussie, UI-teksten) is Nederlands.
+Voertaal in dit project (documentatie, discussie, UI-teksten) is Nederlands. **Code is Engels** (besloten 2026-08-10: identifiers, commentaar, logmeldingen) — de oudere Nederlandstalige spike-/aggregatorcode wordt geleidelijk gemigreerd; nieuwe code altijd in het Engels.
 
 ## Wat dit project is
 

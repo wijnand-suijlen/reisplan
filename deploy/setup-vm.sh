@@ -35,10 +35,7 @@ if [ ! -f "$REPO_DIR/.env" ]; then
 fi
 
 echo "== 6. Statische data bouwen (download -> filter -> merge; duurt op een e2-micro even) =="
-uv run spike/s0_download.py
-uv run spike/s2_filter_rail.py
-uv run spike/s3_merge_dedup.py
-uv run maak-segmenten
+bash deploy/vernieuw.sh   # zet zelf geheugenlimieten en slaat de dupdetectie over
 
 echo "== 7. systemd-services installeren =="
 sed "s|@REPO@|$REPO_DIR|g; s|@USER@|$USER|g; s|@UV@|$(command -v uv)|g" \

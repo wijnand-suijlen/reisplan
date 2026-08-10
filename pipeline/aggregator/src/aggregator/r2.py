@@ -19,9 +19,36 @@ def actief() -> bool:
     return all(os.environ.get(k) for k in _NODIG)
 
 
+def download(sleutel: str) -> bytes | None:
+    """Object ophalen (transparant ontgzipt); None als niet geconfigureerd of afwezig."""
+    if not actief():
+        return None
+    _maak_client()
+    try:
+        resp = _client.get_object(Bucket=os.environ["R2_BUCKET"], Key=sleutel)
+    except _client.exceptions.NoSuchKey:
+        return None
+    data = resp["Body"].read()
+    if resp.get("ContentEncoding") == "gzip":
+        data = gzip.decompress(data)
+    return data
+
+
 def upload(sleutel: str, data: bytes, content_type: str, cache_s: int = 30) -> None:
     if not actief():
         return
+    _maak_client()
+    _client.put_object(
+        Bucket=os.environ["R2_BUCKET"],
+        Key=sleutel,
+        Body=gzip.compress(data),
+        ContentType=content_type,
+        ContentEncoding="gzip",
+        CacheControl=f"max-age={cache_s}",
+    )
+
+
+def _maak_client() -> None:
     global _client
     if _client is None:
         # negeer eventuele (kapotte/bedrijfs-)~/.aws-configuratie: wij geven alles expliciet mee
@@ -36,11 +63,3 @@ def upload(sleutel: str, data: bytes, content_type: str, cache_s: int = 30) -> N
             aws_secret_access_key=os.environ["R2_SECRET_ACCESS_KEY"],
             region_name="auto",
         )
-    _client.put_object(
-        Bucket=os.environ["R2_BUCKET"],
-        Key=sleutel,
-        Body=gzip.compress(data),
-        ContentType=content_type,
-        ContentEncoding="gzip",
-        CacheControl=f"max-age={cache_s}",
-    )

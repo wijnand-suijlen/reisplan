@@ -17,7 +17,9 @@ contains predictions hours ahead and stale changes hours back.
 import heapq
 import json
 import logging
+import re
 import time
+import unicodedata
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -54,6 +56,11 @@ def parse_iris_time(value: str) -> int | None:
         return None
 
 
+def norm_name(name: str) -> str:
+    name = unicodedata.normalize("NFKD", name.lower()).replace("ß", "ss")
+    return re.sub(r"[^a-z0-9]", "", name)
+
+
 @dataclass
 class PlanStop:
     pt_arr: int | None
@@ -84,7 +91,9 @@ class DbTimetablesSource:
         self.plan: dict[str, dict[str, PlanStop]] = {}   # eva -> stop_id -> PlanStop
         self.plan_slices: dict[tuple, float] = {}        # (eva, date, hour) -> fetched at
         self.trip_labels: dict[str, str] = {}            # trip head -> "ICE 228"
+        self.trip_paths: dict[str, list[str]] = {}       # trip head -> planned path (names)
         self.trip_state: dict[str, dict[int, _StopState]] = {}
+        self._name_index: dict[str, str] | None = None   # normalized station name -> cluster
         self.stations: dict[str, dict] = {}
         self.queue: list[tuple[float, str]] = []         # (due, eva)
         self.last_prune = 0.0
@@ -131,25 +140,33 @@ class DbTimetablesSource:
             data = self._get(f"/plan/{key[0]}/{key[1]}/{key[2]}")
             if data is None:
                 continue
-            target = self.plan.setdefault(eva, {})
-            for sid, plan_stop, label in self._parse_plan(data):
-                target[sid] = plan_stop
-                if label:
-                    self.trip_labels[sid.rpartition("-")[0]] = label
+            self._parse_plan(data, eva)
 
-    @staticmethod
-    def _parse_plan(data: bytes):
-        for s in ET.fromstring(data).iter("s"):
+    def _parse_plan(self, data: bytes, eva: str) -> None:
+        root = ET.fromstring(data)
+        station_name = root.get("station") or ""
+        target = self.plan.setdefault(eva, {})
+        for s in root.iter("s"):
             sid = s.get("id")
             if not sid:
                 continue
+            head = sid.rpartition("-")[0]
             tl = s.find("tl")
-            label = f"{tl.get('c')} {tl.get('n')}" if tl is not None and tl.get("n") else None
+            if tl is not None and tl.get("n"):
+                self.trip_labels[head] = f"{tl.get('c')} {tl.get('n')}"
             ar, dp = s.find("ar"), s.find("dp")
-            yield sid, PlanStop(
+            target[sid] = PlanStop(
                 parse_iris_time(ar.get("pt")) if ar is not None and ar.get("pt") else None,
                 parse_iris_time(dp.get("pt")) if dp is not None and dp.get("pt") else None,
-            ), label
+            )
+            if head not in self.trip_paths and station_name:
+                # ar.ppth = stations before this stop, dp.ppth = stations after it:
+                # one plan entry reveals the train's entire planned path
+                before = (ar.get("ppth") or "").split("|") if ar is not None else []
+                after = (dp.get("ppth") or "").split("|") if dp is not None else []
+                path = [p for p in before if p] + [station_name] + [p for p in after if p]
+                if len(path) > 2:
+                    self.trip_paths[head] = path
 
     # -- fchg processing ------------------------------------------------------
 
@@ -233,6 +250,60 @@ class DbTimetablesSource:
             head, idx, service_date = parts
             self._record(head, idx, cluster, 0, pt, service_date, now, statisch, out)
 
+    def _cluster_names(self, statisch: Statisch) -> dict[str, str]:
+        if self._name_index is None:
+            index: dict[str, str] = {}
+            ambiguous = set()
+            for cluster_id, cluster in statisch.clusters.items():
+                key = norm_name(cluster.naam)
+                if key in index or key in ambiguous:
+                    index.pop(key, None)  # ambiguous names would mis-place delays
+                    ambiguous.add(key)
+                else:
+                    index[key] = cluster_id
+            self._name_index = index
+        return self._name_index
+
+    def _expand_pair(self, head: str, cluster_from: str, cluster_to: str,
+                     statisch: Statisch) -> list[tuple[str, float]]:
+        """Fine segments (with delta fractions) between two polled stops of a trip.
+
+        The static refinement table only knows station pairs that are consecutive in
+        some static trip; anything else (e.g. an RV train observed at two hubs many
+        stops apart) would stay invisible. For those we walk the train's own planned
+        path (ppth) to the intermediate stations and spread the delta evenly over the
+        resulting chain links."""
+        seg = segment_id(cluster_from, cluster_to)
+        fine = statisch.verfijn(seg)
+        if len(fine) > 1 or fine[0][0] != seg or statisch.randen(seg):
+            return fine  # refinement known, or the pair is itself a drawn segment
+        path = self.trip_paths.get(head)
+        if not path:
+            return fine
+        names = self._cluster_names(statisch)
+        positions = {}
+        for i, name in enumerate(path):
+            cluster = names.get(norm_name(name))
+            if cluster in (cluster_from, cluster_to) and cluster not in positions:
+                positions[cluster] = i
+        if len(positions) < 2:
+            return fine
+        lo, hi = sorted((positions[cluster_from], positions[cluster_to]))
+        chain = [cluster_from if positions[cluster_from] == lo else cluster_to]
+        for name in path[lo + 1: hi]:
+            cluster = names.get(norm_name(name))
+            if cluster and cluster != chain[-1]:
+                chain.append(cluster)  # unresolved names are simply bridged over
+        chain.append(cluster_to if chain[0] == cluster_from else cluster_from)
+        if len(chain) < 3:
+            return fine
+        links = list(zip(chain, chain[1:]))
+        out = []
+        for a, b in links:
+            for f, fraction in statisch.verfijn(segment_id(a, b)):
+                out.append((f, fraction / len(links)))
+        return out
+
     def _emit_deltas(self, head: str, idx: int, statisch: Statisch, now: float,
                      out: dict) -> None:
         """Pair the updated stop with its nearest known neighbours along the trip."""
@@ -249,7 +320,7 @@ class DbTimetablesSource:
             s_from, s_to = state[a], state[b]
             if s_from.cluster == s_to.cluster:
                 continue
-            fine_segments = statisch.verfijn(segment_id(s_from.cluster, s_to.cluster))
+            fine_segments = self._expand_pair(head, s_from.cluster, s_to.cluster, statisch)
             if s_from.cancelled and s_to.cancelled:
                 out["cancels"] += [(fine, trip_ref) for fine, _ in fine_segments]
                 continue
@@ -276,6 +347,9 @@ class DbTimetablesSource:
             if all(now - st.seen > TRIP_STATE_TTL_S for st in stops.values()):
                 del self.trip_state[head]
                 self.trip_labels.pop(head, None)
+                self.trip_paths.pop(head, None)
+        if len(self.trip_paths) > 50_000:  # paths of never-observed trips accumulate
+            self.trip_paths.clear()
         for eva, entries in self.plan.items():
             if len(entries) > 20_000:  # safety valve; plan ids are not individually dated
                 self.plan[eva] = {}

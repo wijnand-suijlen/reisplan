@@ -255,6 +255,9 @@ def main():
     for i, (a, b) in enumerate(paren):
         if a not in snap or b not in snap or a not in coords or b not in coords:
             continue
+        if snap[a] == snap[b]:
+            mislukt += 1  # beide stations op dezelfde spoorknoop gesnapt
+            continue
         hemelsbreed = haversine_m(coords[a][0], coords[a][1], coords[b][0], coords[b][1])
         limiet = PAD_FACTOR * hemelsbreed + PAD_SLACK_M
         pad = route(snap[a], snap[b], lezer.coords[snap[b]], lezer, randen, op_rand, buren, limiet)
@@ -262,6 +265,9 @@ def main():
             mislukt += 1
             continue
         punten = pad_naar_polyline(pad, snap[a], randen, op_rand, lezer)
+        if len(punten) < 2:
+            mislukt += 1
+            continue
         lijn = LineString([(lon, lat) for lat, lon in punten]).simplify(SIMPLIFY_GRADEN)
         resultaat[f"{a}|{b}"] = [[round(x, 5), round(y, 5)] for x, y in lijn.coords]
         if (i + 1) % 2000 == 0:

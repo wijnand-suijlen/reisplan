@@ -13,8 +13,10 @@ from pathlib import Path
 import duckdb
 
 from . import r2
-from .config import DATA, MERGED_DB, WEB_DATA
+from .config import DATA, MERGED_DB, WEB_DATA, laad_env
 from .verfijning import bouw_verfijning
+
+laad_env()  # R2-gegevens uit .env, anders slaat de geometrie-upload stilletjes over
 
 GEOMETRIE_PAD = DATA / "geometrie" / "paar_geometrie.json.gz"
 

@@ -53,20 +53,16 @@ class Opslag:
                     nieuw += 1
         return nieuw
 
-    def venster(self, seconden: int = 1800):
-        """Per segment over het venster: p90(delta), aantal distinct trips."""
+    def venster_ruw(self, seconden: int = 1800):
+        """Per segment over het venster: (lijst delta's, set trips) — de aggregatie
+        naar getekende randen gebeurt in main (per rand over álle segmenten erop)."""
         sinds = int(time.time()) - seconden
         rows = self.db.execute(
             """SELECT segment, delta_s, trip_id FROM seg_obs WHERE ts >= ?""", (sinds,)
         ).fetchall()
-        per_seg: dict[str, list[int]] = {}
-        trips: dict[str, set] = {}
+        per_seg: dict[str, tuple[list, set]] = {}
         for segment, delta, trip in rows:
-            per_seg.setdefault(segment, []).append(delta)
-            trips.setdefault(segment, set()).add(trip)
-        resultaat = {}
-        for segment, deltas in per_seg.items():
-            deltas.sort()
-            p90 = deltas[min(len(deltas) - 1, int(0.9 * len(deltas)))]
-            resultaat[segment] = (p90, len(trips[segment]))
-        return resultaat
+            deltas, trips = per_seg.setdefault(segment, ([], set()))
+            deltas.append(delta)
+            trips.add(trip)
+        return per_seg

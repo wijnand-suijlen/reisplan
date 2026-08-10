@@ -37,7 +37,17 @@ class Statisch:
                 self.verfijning.setdefault(grof, []).append((fijn, fractie))
         except duckdb.CatalogException:
             pass  # tabel bestaat nog niet (oudere merge) — geen verfijning
+        self.segment_randen: dict[str, list[str]] = {}
+        try:
+            for seg, rand in con.execute("SELECT segment, rand FROM segment_randen").fetchall():
+                self.segment_randen.setdefault(seg, []).append(rand)
+        except duckdb.CatalogException:
+            pass  # nog geen randtabel — segmenten kleuren dan niet
         con.close()
+
+    def randen(self, segment: str) -> list[str]:
+        """Getekende randen waar dit segment overheen loopt (leeg als onbekend)."""
+        return self.segment_randen.get(segment, [])
 
     def verfijn(self, segment: str) -> list[tuple[str, float]]:
         """Expresse-segment -> bladsegmenten met lengte-fracties; identiteit als onbekend."""

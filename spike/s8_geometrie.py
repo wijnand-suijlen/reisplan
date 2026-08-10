@@ -110,7 +110,7 @@ def _sluit(ketting, knooppunt, lezer, randen, op_rand, buren):
     poly = [lezer.coords[n] for n in ketting]
     lengte = sum(haversine_m(*poly[i], *poly[i + 1]) for i in range(len(poly) - 1))
     idx = len(randen)
-    randen.append((a, b, lengte, poly))
+    randen.append((a, b, lengte, poly, list(ketting)))
     for pos, n in enumerate(ketting):
         op_rand.setdefault(n, (idx, pos))
     buren[a].append((b, lengte, idx, +1))
@@ -149,7 +149,7 @@ def route(start_n, doel_n, doel_co, lezer, randen, op_rand, buren, limiet):
     def virtueel(n):
         """Verbind een ruwe (mogelijk mid-rand) knoop met de knooppunten van zijn rand."""
         idx, pos = op_rand[n]
-        a, b, _, poly = randen[idx]
+        a, b, _, poly, _ketting = randen[idx]
         la = sum(haversine_m(*poly[i], *poly[i + 1]) for i in range(pos))
         lb = sum(haversine_m(*poly[i], *poly[i + 1]) for i in range(pos, len(poly) - 1))
         return [(a, la, (idx, pos, "voor")), (b, lb, (idx, pos, "na"))]
@@ -194,21 +194,24 @@ def route(start_n, doel_n, doel_co, lezer, randen, op_rand, buren, limiet):
     return None
 
 
-def pad_naar_polyline(pad, start_n, randen, op_rand, lezer):
-    punten = [lezer.coords[start_n]]
-    for stap, bereikt in pad:
+def pad_naar_nodes(pad, start_n, randen):
+    """Reconstrueer het pad als lijst van ruwe OSM-knoop-id's (exacte oriëntatie)."""
+    nodes = [start_n]
+    for stap, _bereikt in pad:
         if len(stap) == 2:                      # hele rand
             idx, richting = stap
-            poly = randen[idx][3]
-            punten.extend(poly if richting == +1 else poly[::-1])
+            ketting = randen[idx][4]
+            deel = ketting if richting == +1 else ketting[::-1]
         else:                                    # deelrand vanaf/naar virtuele knoop
             idx, pos, kant = stap
-            a, b, _, poly = randen[idx]
-            deel = poly[: pos + 1][::-1] if kant == "voor" else poly[pos:]
-            if punten and haversine_m(*punten[-1], *deel[0]) > haversine_m(*punten[-1], *deel[-1]):
+            ketting = randen[idx][4]
+            deel = ketting[: pos + 1][::-1] if kant == "voor" else ketting[pos:]
+            if deel and deel[0] != nodes[-1] and deel[-1] == nodes[-1]:
                 deel = deel[::-1]
-            punten.extend(deel)
-    return punten
+        for n in deel:
+            if n != nodes[-1]:
+                nodes.append(n)
+    return nodes
 
 
 def main():
@@ -250,7 +253,7 @@ def main():
     }
     paren = sorted(set(tuple(p) for p in paren) | set(tuple(p) for p in alle))
 
-    resultaat = {}
+    paden = {}
     mislukt = 0
     for i, (a, b) in enumerate(paren):
         if a not in snap or b not in snap or a not in coords or b not in coords:
@@ -264,23 +267,89 @@ def main():
         if pad is None:
             mislukt += 1
             continue
-        punten = pad_naar_polyline(pad, snap[a], randen, op_rand, lezer)
-        if len(punten) < 2:
+        nodes = pad_naar_nodes(pad, snap[a], randen)
+        if len(nodes) < 2:
             mislukt += 1
             continue
-        lijn = LineString([(lon, lat) for lat, lon in punten]).simplify(SIMPLIFY_GRADEN)
-        resultaat[f"{a}|{b}"] = [[round(x, 5), round(y, 5)] for x, y in lijn.coords]
-        if (i + 1) % 2000 == 0:
+        paden[f"{a}|{b}"] = nodes
+        if (i + 1) % 4000 == 0:
             print(f"  {i+1}/{len(paren)} paren, {mislukt} zonder pad ({time.monotonic()-t0:.0f} s)", flush=True)
+    print(f"routering: {len(paden)} paden, {mislukt} zonder pad ({time.monotonic()-t0:.0f} s)", flush=True)
 
+    rand_geo, dekking = dissolve(paden, lezer.coords)
     UIT.mkdir(parents=True, exist_ok=True)
-    uitpad = UIT / "paar_geometrie.json.gz"
-    uitpad.write_bytes(gzip.compress(json.dumps(resultaat, separators=(",", ":")).encode()))
+    uitpad = UIT / "randen.json.gz"
+    uitpad.write_bytes(gzip.compress(json.dumps(
+        {"randen": rand_geo, "dekking": dekking}, separators=(",", ":")).encode()))
     print(
-        f"klaar: {len(resultaat)} paren met geometrie, {mislukt} fallback-rechte-lijn, "
+        f"klaar: {len(rand_geo)} getekende randen uit {len(paden)} paden, "
         f"{uitpad.stat().st_size/1e6:.1f} MB gz, totaal {time.monotonic()-t0:.0f} s",
         flush=True,
     )
+
+
+def dissolve(paden, coords):
+    """Knooppaden -> getekende randen: maximale stukken spoor waar exact dezelfde
+    set segmenten overheen loopt wordt één rand. Retourneert (rand_geo, dekking):
+    rand_geo: rand_id -> vereenvoudigde polyline [[lon,lat],...]
+    dekking:  rand_id -> [segment_id, ...] (de segmenten die deze rand berijden)."""
+    cover = {}
+    for sid, nodes in paden.items():
+        for u, v in zip(nodes, nodes[1:]):
+            e = (u, v) if u < v else (v, u)
+            s = cover.get(e)
+            if s is None:
+                cover[e] = {sid}
+            else:
+                s.add(sid)
+
+    adj = defaultdict(list)
+    for u, v in cover:
+        adj[u].append(v)
+        adj[v].append(u)
+
+    def coverkey(u, v):
+        e = (u, v) if u < v else (v, u)
+        return cover[e]
+
+    def is_grens(n):
+        if len(adj[n]) != 2:
+            return True
+        b1, b2 = adj[n]
+        return coverkey(n, b1) != coverkey(n, b2)
+
+    bezocht = set()
+    rand_geo, dekking = {}, {}
+    teller = defaultdict(int)
+    for e_start in cover:
+        if e_start in bezocht:
+            continue
+        u, v = e_start
+        # loop in beide richtingen door zolang geen grens en zelfde cover
+        keten = [u, v]
+        bezocht.add(e_start)
+        for kant in (0, 1):
+            while True:
+                kop = keten[-1] if kant == 0 else keten[0]
+                vorige = keten[-2] if kant == 0 else keten[1]
+                if is_grens(kop):
+                    break
+                volgende = adj[kop][0] if adj[kop][1] == vorige else adj[kop][1]
+                e = (kop, volgende) if kop < volgende else (volgende, kop)
+                if e in bezocht or cover[e] is not coverkey(kop, vorige) and cover[e] != coverkey(kop, vorige):
+                    break
+                bezocht.add(e)
+                if kant == 0:
+                    keten.append(volgende)
+                else:
+                    keten.insert(0, volgende)
+        basis = f"E{min(keten[0], keten[-1])}-{max(keten[0], keten[-1])}"
+        teller[basis] += 1
+        rid = basis if teller[basis] == 1 else f"{basis}-{teller[basis]}"
+        lijn = LineString([(coords[n][1], coords[n][0]) for n in keten]).simplify(SIMPLIFY_GRADEN)
+        rand_geo[rid] = [[round(x, 5), round(y, 5)] for x, y in lijn.coords]
+        dekking[rid] = sorted(cover[(keten[0], keten[1]) if keten[0] < keten[1] else (keten[1], keten[0])])
+    return rand_geo, dekking
 
 
 if __name__ == "__main__":

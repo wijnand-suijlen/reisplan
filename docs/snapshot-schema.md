@@ -1,4 +1,13 @@
-# Snapshot-schema vertragingskaart (v1)
+# Snapshot-schema vertragingskaart (v1, rand-gebaseerd sinds 2026-08-10)
+
+**Rand-gebaseerd**: de getekende eenheden zijn niet langer stationsparen maar
+*randen* — maximale stukken fysiek spoor (uit de OSM-dissolve in spike/s8) waar
+dezelfde set segmenten overheen loopt. `seg`-ids in het snapshot en feature-ids in
+segments.geojson zijn rand-ids (`E<node>-<node>`; `F:<a>|<b>` voor rechte-lijn-
+fallbacks). De aggregator aggregeert per rand over álle segmenten die hem berijden
+(tabel `segment_randen` in merged.duckdb); zo tellen ook expresse-sprongen mee op
+het juiste spoor en zijn parallelle dubbeltekeningen per constructie verdwenen.
+Feature-property `lijnen` beschrijft welke verbindingen over de rand lopen.
 
 Contract tussen aggregator, webviewer en (later) de Android-app. De geometrie zit **niet**
 in het snapshot maar in het statische `segments.geojson` (gegenereerd door `maak-segmenten`);

@@ -96,7 +96,19 @@ def main() -> None:
         if nu >= volgende_snapshot:
             dekking = {b.cfg.land: b.dekking() for b in actief}
             incidenten = [i for b in actief for i in b.incidenten]
-            snap = bouw_snapshot(dekking, opslag.venster(1800), incidenten)
+            # per getekende rand aggregeren over álle segmenten die eroverheen lopen
+            rand_deltas: dict[str, list] = {}
+            rand_trips: dict[str, set] = {}
+            for segment, (deltas, trips) in opslag.venster_ruw(1800).items():
+                for rand in statisch.randen(segment):
+                    rand_deltas.setdefault(rand, []).extend(deltas)
+                    rand_trips.setdefault(rand, set()).update(trips)
+            venster = {}
+            for rand, deltas in rand_deltas.items():
+                deltas.sort()
+                p90 = deltas[min(len(deltas) - 1, int(0.9 * len(deltas)))]
+                venster[rand] = (p90, len(rand_trips[rand]))
+            snap = bouw_snapshot(dekking, venster, incidenten)
             data = schrijf_snapshot(snap)
             try:
                 r2.upload("snapshot.json", data, "application/json")

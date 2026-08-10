@@ -131,7 +131,7 @@ function koppelTooltip() {
     const detail = st.k === undefined
       ? `<span class="sub">geen recente waarneming</span>`
       : `<span class="sub">p90 opgelopen: ${Math.round(st.p90 / 60)} min · ${st.n} trein(en), 30 min</span>`;
-    toon(e, `<div class="kop">${f.properties.van} – ${f.properties.naar}</div>${detail}`);
+    toon(e, `<div class="kop">${f.properties.lijnen}</div>${detail}`);
     kaart.getCanvas().style.cursor = "pointer";
   });
   kaart.on("mouseleave", "seg", () => {

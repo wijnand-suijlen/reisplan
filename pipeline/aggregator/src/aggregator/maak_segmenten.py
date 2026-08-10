@@ -1,14 +1,18 @@
-"""Eenmalig (na elke dataverversing): segments.geojson + verfijningstabel genereren.
+"""Na elke dataverversing: getekende randen + verfijnings- en randtabellen genereren.
 
-1. Alle bereden clusterparen bepalen (opeenvolgende stops van rail-trips).
-2. Segmentverfijning berekenen (zie verfijning.py): expresse-sprongen -> ketens.
-3. De kaart tekent alleen de "blad"-segmenten (rechte lijnen, v1); de tabel
-   segment_verfijning in merged.duckdb stuurt de delta-verdeling in de aggregator.
+Rand-gebaseerde kaart (dedupliceert parallelle lijnen per constructie):
+1. Verfijningstabel berekenen (expresse-sprong -> keten van bladsegmenten), voor de
+   delta-verdeling in de aggregator.
+2. randen.json.gz laden (uit spike/s8: dissolve van OSM-knooppaden — elk stuk spoor
+   waar dezelfde set segmenten overheen loopt is één getekende rand).
+3. segments.geojson = de randen (naam blijft vanwege het viewer-contract), plus
+   rechte-lijn-fallbacks voor bladsegmenten zonder geometrie.
+4. Tabel segment_randen in merged.duckdb: segment -> rand-ids (voor de per-rand-
+   aggregatie in de aggregator).
 """
 
 import gzip
 import json
-from pathlib import Path
 
 import duckdb
 
@@ -16,33 +20,31 @@ from . import r2
 from .config import DATA, MERGED_DB, WEB_DATA, laad_env
 from .verfijning import bouw_verfijning
 
-laad_env()  # R2-gegevens uit .env, anders slaat de geometrie-upload stilletjes over
+laad_env()  # R2-gegevens uit .env, anders slaat de upload/download stilletjes over
 
-GEOMETRIE_PAD = DATA / "geometrie" / "paar_geometrie.json.gz"
+RANDEN_PAD = DATA / "geometrie" / "randen.json.gz"
 
 
-def laad_geometrie() -> dict:
-    """v2-geometrie (spike/s8): "a|b" -> polyline over het echte spoor.
-    Lokaal bestand gaat voor; anders van R2 (en lokaal cachen); anders leeg (rechte lijnen)."""
-    if GEOMETRIE_PAD.exists():
-        geometrie = json.loads(gzip.decompress(GEOMETRIE_PAD.read_bytes()))
+def laad_randen() -> dict:
+    """Dissolve-output van s8: lokaal bestand gaat voor; anders van R2 (en cachen)."""
+    if RANDEN_PAD.exists():
+        data = RANDEN_PAD.read_bytes()
         if r2.actief():
             try:
-                r2.upload("paar_geometrie.json.gz", json.dumps(geometrie, separators=(",", ":")).encode(),
-                          "application/json", cache_s=86400)
+                r2.upload("randen.json.gz", gzip.decompress(data), "application/json", cache_s=86400)
             except Exception as e:
-                print(f"waarschuwing: R2-upload geometrie mislukt: {e}")
-        return geometrie
-    data = None
+                print(f"waarschuwing: R2-upload randen mislukt: {e}")
+        return json.loads(gzip.decompress(data))
     try:
-        data = r2.download("paar_geometrie.json.gz")
+        data = r2.download("randen.json.gz")
     except Exception as e:
-        print(f"waarschuwing: R2-download geometrie mislukt: {e}")
+        print(f"waarschuwing: R2-download randen mislukt: {e}")
+        data = None
     if data:
-        GEOMETRIE_PAD.parent.mkdir(parents=True, exist_ok=True)
-        GEOMETRIE_PAD.write_bytes(gzip.compress(data))
+        RANDEN_PAD.parent.mkdir(parents=True, exist_ok=True)
+        RANDEN_PAD.write_bytes(gzip.compress(data))
         return json.loads(data)
-    return {}
+    return {"randen": {}, "dekking": {}}
 
 
 def main() -> None:
@@ -86,35 +88,67 @@ def main() -> None:
     )
     n_verfijnd = con.execute("SELECT count(DISTINCT grof) FROM segment_verfijning").fetchone()[0]
 
-    geometrie = laad_geometrie()
-    bladen = {e for lijst in verf.values() for e, _ in lijst}
+    def naam_van(seg_id: str) -> str:
+        a, b = seg_id.split("|")
+        return f"{info[a][0]} – {info[b][0]}" if a in info and b in info else seg_id
+
+    randen = laad_randen()
+    rand_geo, dekking = randen["randen"], randen["dekking"]
+
+    # inverse: segment -> randen waar hij overheen loopt
+    segment_randen: dict[str, list[str]] = {}
+    for rid, segs in dekking.items():
+        for seg in segs:
+            segment_randen.setdefault(seg, []).append(rid)
+
     features = []
-    n_echt = 0
-    for a, b in sorted(bladen):
-        na, la, lo_a = info.get(a, (None, None, None))
-        nb, lb, lo_b = info.get(b, (None, None, None))
-        if la is None or lb is None:
+    for rid, lijn in rand_geo.items():
+        if len(lijn) < 2:
             continue
-        seg_id = f"{a}|{b}"
-        lijn = geometrie.get(seg_id)
-        if lijn and len(lijn) >= 2:
-            n_echt += 1
-        else:
-            lijn = [[round(lo_a, 5), round(la, 5)], [round(lo_b, 5), round(lb, 5)]]
+        segs = dekking.get(rid, [])
+        label = ", ".join(naam_van(s) for s in segs[:3]) + (f" (+{len(segs) - 3})" if len(segs) > 3 else "")
         features.append(
             {
                 "type": "Feature",
-                "id": seg_id,
-                "properties": {"id": seg_id, "van": na, "naar": nb},
+                "id": rid,
+                "properties": {"id": rid, "lijnen": label},
                 "geometry": {"type": "LineString", "coordinates": lijn},
             }
         )
+
+    # rechte-lijn-fallback voor bladsegmenten zonder OSM-pad
+    bladen = {e for lijst in verf.values() for e, _ in lijst}
+    n_fallback = 0
+    for a, b in sorted(bladen):
+        seg_id = f"{a}|{b}"
+        if seg_id in segment_randen or a not in coords or b not in coords:
+            continue
+        rid = f"F:{seg_id}"
+        segment_randen[seg_id] = [rid]
+        n_fallback += 1
+        (la, lo_a), (lb, lo_b) = coords[a], coords[b]
+        features.append(
+            {
+                "type": "Feature",
+                "id": rid,
+                "properties": {"id": rid, "lijnen": naam_van(seg_id)},
+                "geometry": {"type": "LineString",
+                             "coordinates": [[round(lo_a, 5), round(la, 5)], [round(lo_b, 5), round(lb, 5)]]},
+            }
+        )
+
+    con.execute("CREATE OR REPLACE TABLE segment_randen (segment VARCHAR, rand VARCHAR)")
+    con.executemany(
+        "INSERT INTO segment_randen VALUES (?, ?)",
+        [(seg, rid) for seg, rids in segment_randen.items() for rid in rids],
+    )
+
     WEB_DATA.mkdir(parents=True, exist_ok=True)
     (WEB_DATA / "segments.geojson").write_text(
         json.dumps({"type": "FeatureCollection", "features": features}, separators=(",", ":"))
     )
-    print(f"segments.geojson: {len(features)} bladsegmenten ({n_echt} met echte spoorgeometrie); "
-          f"{n_verfijnd} grove segmenten verfijnd")
+    print(f"segments.geojson: {len(features)} getekende randen ({n_fallback} rechte-lijn-fallbacks); "
+          f"{n_verfijnd} grove segmenten verfijnd; {len(segment_randen)} segmenten gemapt")
 
 
 if __name__ == "__main__":

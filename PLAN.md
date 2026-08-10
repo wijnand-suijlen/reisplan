@@ -132,6 +132,13 @@ Aanpak:
 5. **Oplevervorm**: eerst als webpagina (MapLibre GL JS op het snapshot-endpoint) om de keten te valideren vóór er Android-werk is; het app-kaartscherm (fase 1/3) hergebruikt endpoint en stijl.
 6. **Beperking DE**: geen officiële landelijke realtime-feed; opties: DELFI/SIRI (achter registratie, inhoud verifiëren), roulerend de grootste stations via Timetables-API (60 req/min), of fragiel vendo. DE-dekking is in eerste instantie grofmaziger — de kaart moet dekkingskwaliteit per land eerlijk tonen.
 
+**Verbeterlijst vertragingskaart** *(verzameld tijdens gebruik, 2026-08-10)*:
+1. **Route-highlight bij klik**: klik op een baanvak → licht op welke lijnen/treinseries eroverheen rijden. Voorkomt de misinterpretatie dat aangrenzende gelijkgekleurde baanvakken één treinroute zijn (casus: Stendal–Wittenberge–Berlijn leek één route, maar was IC 57 + Hamburg-corridor + omgeleide Amsterdam–Berlijn-ritten).
+2. **Incident-filter/clustering**: CH publiceert honderden geplande-werkzaamheden-alerts (🚧-wolk); filter op ernst/effect of clustering bij uitzoomen.
+3. **Dekkingsnuance "gastdata"**: DE kleurt deels via doorgaande treinen uit de NL/BE/CH-feeds terwijl het paneel "geen bron" zegt — toon dit als aparte status ("alleen internationale treinen").
+4. **v2-geometrie** (bestaand punt M11): echte spoorlijnvoering; lost ook de resterende onverfijnbare nonstop-sprongen op (bv. Parijs–Lyon Saint-Exupéry, dat op de bypass zonder tussenstations ligt).
+5. **Gerealiseerde vs. voorspelde delta's**: trip updates bevatten ook voorspellingen voor toekomstige stops; overwegen alleen gepasseerde baanvakken te laten meekleuren, of voorspelling apart te stylen.
+
 **Fase 1 — MVP (Planmodus, 5 landen)**
 1. Backend-ETL: rail-only GTFS van 5 landen mergen tot één compacte dataset (productieversie van de fase-0-spike)
 2. On-device RAPTOR op die dataset; A→B met vertrektijd. Treinen met reserveringsplicht doen gewoon mee in de planning, met duidelijke reserveringsvlag

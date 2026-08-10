@@ -1,6 +1,11 @@
 "use strict";
 
 const KLEUREN = ["#0ca30c", "#fab219", "#ec835a", "#d03b3b"]; // klasse 0-3 (gevalideerd statuspalet)
+
+// op smalle schermen neemt de legenda het halve beeld in beslag: start ingeklapt
+if (matchMedia("(max-width: 640px)").matches) {
+  document.getElementById("legenda-details").removeAttribute("open");
+}
 const GEEN_DATA = "#9a9a97";
 const CAUSE_ICOON = {
   ACCIDENT: "💥", TECHNICAL_PROBLEM: "🔧", CONSTRUCTION: "🚧", MAINTENANCE: "🚧",

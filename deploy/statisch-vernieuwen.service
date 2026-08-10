@@ -7,6 +7,8 @@ Type=oneshot
 User=@USER@
 WorkingDirectory=@REPO@
 Environment=REISPLAN_DUCKDB_MEM=600MB
+ExecStart=/usr/bin/git -C @REPO@ pull --ff-only
+ExecStart=@UV@ sync --all-packages
 ExecStart=@UV@ run spike/s0_download.py
 ExecStart=@UV@ run spike/s2_filter_rail.py
 ExecStart=@UV@ run spike/s3_merge_dedup.py

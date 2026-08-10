@@ -122,6 +122,31 @@ def bouw_stations(con):
     return rows
 
 
+def repareer_nulpunt(rows):
+    """(0,0)-coördinaten ("Null Island") komen voor bij buitenlandse planningsstubs
+    (o.a. ÖBB-stations in de CH-feed). Neem coördinaten over van een gelijknamig
+    station uit een andere feed; anders het station uitsluiten (lat=None)."""
+    geldig = {}
+    for _, _, naam, lat, lon, _ in rows:
+        if lat is not None and (abs(lat) > 0.5 or abs(lon) > 0.5):
+            geldig.setdefault(normaliseer_naam(naam), (lat, lon))
+    uit, n_gefixt, n_weg = [], 0, 0
+    for sid, feed, naam, lat, lon, code in rows:
+        if lat is not None and abs(lat) <= 0.5 and abs(lon) <= 0.5:
+            co = geldig.get(normaliseer_naam(naam))
+            if co:
+                lat, lon = co
+                n_gefixt += 1
+            else:
+                lat = lon = None
+                n_weg += 1
+        uit.append((sid, feed, naam, lat, lon, code))
+    meet("s3", "nulpunt_gefixt", n_gefixt)
+    meet("s3", "nulpunt_uitgesloten", n_weg)
+    print(f"null-island: {n_gefixt} via naam gerepareerd, {n_weg} uitgesloten", flush=True)
+    return uit
+
+
 def cluster_stations(con, rows):
     cluster_van = {}
     clusters = {}  # cluster_id -> dict
@@ -257,7 +282,7 @@ def main():
     if os.environ.get("REISPLAN_DUCKDB_MEM"):  # kleine VM's: spillen i.p.v. swappen
         con.execute(f"SET memory_limit='{os.environ['REISPLAN_DUCKDB_MEM']}'")
     merge(con)
-    rows = bouw_stations(con)
+    rows = repareer_nulpunt(bouw_stations(con))
     cluster_stations(con, rows)
     rapport_grensstations(con)
     dup_trips(con)

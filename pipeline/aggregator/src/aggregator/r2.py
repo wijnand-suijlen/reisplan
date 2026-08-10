@@ -24,6 +24,9 @@ def upload(sleutel: str, data: bytes, content_type: str, cache_s: int = 30) -> N
         return
     global _client
     if _client is None:
+        # negeer eventuele (kapotte/bedrijfs-)~/.aws-configuratie: wij geven alles expliciet mee
+        os.environ.setdefault("AWS_CONFIG_FILE", os.devnull)
+        os.environ.setdefault("AWS_SHARED_CREDENTIALS_FILE", os.devnull)
         import boto3
 
         _client = boto3.client(

@@ -29,7 +29,19 @@ class Statisch:
                    FROM clusters c LEFT JOIN cluster_land cl USING (cluster_id)"""
             ).fetchall()
         }
+        self.verfijning: dict[str, list[tuple[str, float]]] = {}
+        try:
+            for grof, fijn, fractie in con.execute(
+                "SELECT grof, fijn, fractie FROM segment_verfijning ORDER BY grof, volgorde"
+            ).fetchall():
+                self.verfijning.setdefault(grof, []).append((fijn, fractie))
+        except duckdb.CatalogException:
+            pass  # tabel bestaat nog niet (oudere merge) — geen verfijning
         con.close()
+
+    def verfijn(self, segment: str) -> list[tuple[str, float]]:
+        """Expresse-segment -> bladsegmenten met lengte-fracties; identiteit als onbekend."""
+        return self.verfijning.get(segment) or [(segment, 1.0)]
 
     def cluster(self, feed_prefix: str, rt_stop_id: str) -> str | None:
         """RT-feeds gebruiken feed-eigen stop_ids; merged is geprefixt."""

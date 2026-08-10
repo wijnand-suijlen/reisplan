@@ -78,5 +78,8 @@ def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
             stop_obs.append(StopObs(trip_id, cluster, d))
         for (c1, d1), (c2, d2) in zip(expliciet, expliciet[1:]):
             if c1 != c2:
-                seg_obs.append(SegObs(segment_id(c1, c2), trip_id, d2 - d1))
+                delta = d2 - d1
+                # expresse-sprong uitsmeren over de fijne baanvakken (naar rato van lengte)
+                for fijn, fractie in statisch.verfijn(segment_id(c1, c2)):
+                    seg_obs.append(SegObs(fijn, trip_id, round(delta * fractie)))
     return seg_obs, stop_obs

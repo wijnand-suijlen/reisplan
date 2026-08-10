@@ -137,7 +137,8 @@ Aanpak:
 2. **Incident-filter/clustering**: CH publiceert honderden geplande-werkzaamheden-alerts (🚧-wolk); filter op ernst/effect of clustering bij uitzoomen.
 3. **Dekkingsnuance "gastdata"**: DE kleurt deels via doorgaande treinen uit de NL/BE/CH-feeds terwijl het paneel "geen bron" zegt — toon dit als aparte status ("alleen internationale treinen").
 4. **v2-geometrie** (bestaand punt M11): echte spoorlijnvoering; lost ook de resterende onverfijnbare nonstop-sprongen op (bv. Parijs–Lyon Saint-Exupéry, dat op de bypass zonder tussenstations ligt).
-5. **Gerealiseerde vs. voorspelde delta's**: trip updates bevatten ook voorspellingen voor toekomstige stops; overwegen alleen gepasseerde baanvakken te laten meekleuren, of voorspelling apart te stylen.
+5. **Gerealiseerde vs. voorspelde delta's + venstersemantiek**: trip updates bevatten ook voorspellingen voor toekomstige stops; overwegen alleen gepasseerde baanvakken te laten meekleuren, of voorspelling apart te stylen. Verwant: door de wijzigings-dedupe veroudert een stabiele vertraging uit het 30-min-venster terwijl de trein nog rijdt — netter is per actieve trip de laatste bekende delta vast te houden zolang de trip loopt ("grijs" betekent dan echt "geen trein", niet "geen nieuws").
+6. **Drukte-kleurmodus** *(idee eigenaar 2026-08-10)*: schakelbare modus waarin niet vertraging maar treinfrequentie per baanvak de kleur bepaalt, van blauw (weinig) naar rood (druk). Twee varianten mogelijk: gepland (uit de statische dienstregeling, per uur exact te berekenen) en actueel (distinct treinen in het venster — zit al in de tooltip als `n`).
 
 **Fase 1 — MVP (Planmodus, 5 landen)**
 1. Backend-ETL: rail-only GTFS van 5 landen mergen tot één compacte dataset (productieversie van de fase-0-spike)

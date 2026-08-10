@@ -22,12 +22,18 @@ class Statisch:
         self.cluster_van_stop: dict[str, str] = dict(
             con.execute("SELECT stop_id, cluster_id FROM stop_cluster").fetchall()
         )
-        self.clusters: dict[str, Cluster] = {
-            cid: Cluster(cid, naam, lat, lon, land)
-            for cid, naam, lat, lon, land in con.execute(
+        try:
+            rows = con.execute(
                 """SELECT c.cluster_id, c.naam, c.lat, c.lon, coalesce(cl.land, '??')
                    FROM clusters c LEFT JOIN cluster_land cl USING (cluster_id)"""
             ).fetchall()
+        except duckdb.CatalogException:
+            # cluster_land komt uit spike-stap s4 en ontbreekt op de VM — land is optioneel
+            rows = con.execute(
+                "SELECT cluster_id, naam, lat, lon, '??' FROM clusters"
+            ).fetchall()
+        self.clusters: dict[str, Cluster] = {
+            cid: Cluster(cid, naam, lat, lon, land) for cid, naam, lat, lon, land in rows
         }
         self.verfijning: dict[str, list[tuple[str, float]]] = {}
         try:

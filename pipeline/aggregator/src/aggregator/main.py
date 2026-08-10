@@ -8,6 +8,7 @@ import requests
 
 from . import archive, r2
 from .alerts import verwerk_alerts
+from .blockades import BlockadeTracker
 from .config import WEB_DATA, bronnen
 from .db_timetables import DbTimetablesSource
 from .delta import verwerk_tripupdates
@@ -29,15 +30,20 @@ class Bron:
         self.last_modified: dict[str, str] = {}
         self.incidenten: list[dict] = []
 
-    def poll(self, statisch: Statisch, opslag: Opslag) -> None:
+    def poll(self, statisch: Statisch, opslag: Opslag, blokkades: BlockadeTracker) -> None:
         cfg = self.cfg
         try:
             if cfg.tu_url:
                 pb = self._haal(cfg.tu_url)
                 if pb is not None:
-                    seg_obs, stop_obs = verwerk_tripupdates(pb, cfg.feed_prefix, statisch)
+                    seg_obs, stop_obs, cancels, passages = verwerk_tripupdates(
+                        pb, cfg.feed_prefix, statisch)
                     nieuw = opslag.bewaar(cfg.land, seg_obs, stop_obs)
-                    log.info("%s: %d segment-obs, %d gewijzigde stop-obs", cfg.land, len(seg_obs), nieuw)
+                    nu = time.time()
+                    blokkades.note_cancels(cancels, nu)
+                    blokkades.note_passages(passages, nu)
+                    log.info("%s: %d segment-obs, %d gewijzigde stop-obs, %d cancel-obs",
+                             cfg.land, len(seg_obs), nieuw, len(cancels))
             if cfg.alerts_url and time.time() >= self.volgende_alerts:
                 pb = self._haal(cfg.alerts_url, cfg.alerts_headers)
                 if pb is not None:
@@ -75,6 +81,7 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     statisch = Statisch()
     opslag = Opslag()
+    blokkades = BlockadeTracker()
     actief = [DbTimetablesSource(cfg) if cfg.kind == "db-timetables" else Bron(cfg)
               for cfg in bronnen()]
     log.info(
@@ -94,7 +101,7 @@ def main() -> None:
         nu = time.time()
         for bron in actief:
             if bron.cfg.enabled and nu >= bron.volgende:
-                bron.poll(statisch, opslag)
+                bron.poll(statisch, opslag, blokkades)
         if nu >= volgende_snapshot:
             dekking = {b.cfg.land: b.dekking() for b in actief}
             incidenten = [i for b in actief for i in b.incidenten]
@@ -110,13 +117,16 @@ def main() -> None:
                 deltas.sort()
                 p90 = deltas[min(len(deltas) - 1, int(0.9 * len(deltas)))]
                 venster[rand] = (p90, len(rand_trips[rand]))
-            snap = bouw_snapshot(dekking, venster, incidenten)
+            geblokkeerd = sorted({rand for seg in blokkades.blocked_segments(nu)
+                                  for rand in statisch.randen(seg)})
+            snap = bouw_snapshot(dekking, venster, incidenten, geblokkeerd)
             data = schrijf_snapshot(snap)
             try:
                 r2.upload("snapshot.json", data, "application/json")
             except Exception as e:
                 log.warning("R2-upload snapshot mislukt: %s", e)
-            log.info("snapshot: %d segmenten, %d incidenten, %d bytes", len(snap["seg"]), len(snap["inc"]), len(data))
+            log.info("snapshot: %d segmenten, %d incidenten, %d versperd, %d bytes",
+                     len(snap["seg"]), len(snap["inc"]), len(geblokkeerd), len(data))
             volgende_snapshot = nu + 60
         archive.run_if_due()
         time.sleep(1)

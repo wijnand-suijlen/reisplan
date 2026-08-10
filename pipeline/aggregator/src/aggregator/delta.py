@@ -59,10 +59,28 @@ def _delay(stu) -> int | None:
     return None
 
 
+def _event_time(stu) -> int | None:
+    if stu.HasField("arrival") and stu.arrival.HasField("time"):
+        return stu.arrival.time
+    if stu.HasField("departure") and stu.departure.HasField("time"):
+        return stu.departure.time
+    return None
+
+
 def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
+    """Returns (seg_obs, stop_obs, cancels, passages).
+
+    cancels: (fine segment, trip) pairs for cancelled trips and skipped-stop stretches;
+    passages: fine segments with a *realized* passage (event time in the past, or no
+    time given — most feeds only carry near-term updates). Both feed the blockade
+    tracker; a passage is what clears a blockade.
+    """
     feed = parse_feed(pb_bytes)
+    nu = time.time()
     seg_obs: list[SegObs] = []
     stop_obs: list[StopObs] = []
+    cancels: list[tuple[str, str]] = []
+    passages: list[str] = []
     vandaag = time.strftime("%Y%m%d", time.gmtime())
     for ent in feed.entity:
         if not ent.HasField("trip_update"):
@@ -70,20 +88,36 @@ def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
         tu = ent.trip_update
         trip_id = tu.trip.trip_id
         service_date = tu.trip.start_date or vandaag  # start_date is not set by every feed
-        expliciet = []  # (cluster, delay)
+        if tu.trip.schedule_relationship == tu.trip.CANCELED:
+            # cancelled trips usually come without stop list -> static route lookup
+            for fijn in statisch.trip_segments(feed_prefix, trip_id):
+                cancels.append((fijn, trip_id))
+            continue
+        expliciet = []  # (cluster, delay, event_time)
+        vorige_geskipt: str | None = None
         for stu in tu.stop_time_update:
-            d = _delay(stu)
-            if d is None or not stu.stop_id:
-                continue
-            cluster = statisch.cluster(feed_prefix, stu.stop_id)
+            cluster = statisch.cluster(feed_prefix, stu.stop_id) if stu.stop_id else None
             if cluster is None:
                 continue
-            expliciet.append((cluster, d))
+            if stu.schedule_relationship == stu.SKIPPED:
+                if vorige_geskipt and vorige_geskipt != cluster:
+                    for fijn, _ in statisch.verfijn(segment_id(vorige_geskipt, cluster)):
+                        cancels.append((fijn, trip_id))
+                vorige_geskipt = cluster
+                continue
+            vorige_geskipt = None
+            d = _delay(stu)
+            if d is None:
+                continue
+            expliciet.append((cluster, d, _event_time(stu)))
             stop_obs.append(StopObs(trip_id, cluster, d, service_date))
-        for (c1, d1), (c2, d2) in zip(expliciet, expliciet[1:]):
+        for (c1, d1, _t1), (c2, d2, t2) in zip(expliciet, expliciet[1:]):
             if c1 != c2:
                 delta = d2 - d1
+                gerealiseerd = t2 is None or t2 <= nu
                 # expresse-sprong uitsmeren over de fijne baanvakken (naar rato van lengte)
                 for fijn, fractie in statisch.verfijn(segment_id(c1, c2)):
                     seg_obs.append(SegObs(fijn, trip_id, round(delta * fractie)))
-    return seg_obs, stop_obs
+                    if gerealiseerd:
+                        passages.append(fijn)
+    return seg_obs, stop_obs, cancels, passages

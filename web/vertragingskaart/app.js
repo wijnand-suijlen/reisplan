@@ -64,6 +64,16 @@ kaart.on("load", async () => {
       "line-opacity": ["case", ["==", ["coalesce", ["feature-state", "k"], -1], -1], 0.45, 0.95],
     },
   });
+  // versperde baanvakken: rode stippellijn eroverheen (à la wegafsluitingen)
+  kaart.addLayer({
+    id: "seg-blok", type: "line", source: "segmenten",
+    paint: {
+      "line-color": KLEUREN[3],
+      "line-width": 3.5,
+      "line-dasharray": [1.4, 1.6],
+      "line-opacity": ["case", ["boolean", ["feature-state", "blok"], false], 1, 0],
+    },
+  });
   koppelTooltip();
   await ververs();
   setInterval(ververs, 60_000);
@@ -79,9 +89,16 @@ async function ververs() {
   }
 
   const nieuw = new Set();
+  const blok = new Set(snap.blk || []);
   for (const [id, k, p90, n] of snap.seg) {
-    kaart.setFeatureState({ source: "segmenten", id }, { k, p90, n });
+    kaart.setFeatureState({ source: "segmenten", id }, { k, p90, n, blok: blok.has(id) });
     nieuw.add(id);
+  }
+  for (const id of blok) {
+    if (!nieuw.has(id)) { // versperd zónder kleurwaarnemingen — het normale geval
+      kaart.setFeatureState({ source: "segmenten", id }, { blok: true });
+      nieuw.add(id);
+    }
   }
   for (const id of bekendeSegmenten) {
     if (!nieuw.has(id)) kaart.removeFeatureState({ source: "segmenten", id });
@@ -138,7 +155,8 @@ function koppelTooltip() {
     const detail = st.k === undefined
       ? `<span class="sub">geen recente waarneming</span>`
       : `<span class="sub">p90 opgelopen: ${Math.round(st.p90 / 60)} min · ${st.n} trein(en), 30 min</span>`;
-    toon(e, `<div class="kop">${f.properties.lijnen}</div>${detail}`);
+    const versperd = st.blok ? `<div>🚫 versperd — treinen vallen hier uit</div>` : "";
+    toon(e, `<div class="kop">${f.properties.lijnen}</div>${versperd}${detail}`);
     kaart.getCanvas().style.cursor = "pointer";
   });
   kaart.on("mouseleave", "seg", () => {

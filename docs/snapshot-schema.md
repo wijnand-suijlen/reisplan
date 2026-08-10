@@ -49,6 +49,10 @@ properties `van`/`naar` (stationsnamen), geometrie een LineString (v1: rechte li
   dan groen, gezien de dekkingsverschillen per land.
 - `inc`: alleen incidenten met een bepaalbare positie; `cause`/`effect` zijn de
   GTFS-RT-enums (`UNKNOWN_CAUSE` … `MEDICAL_EMERGENCY`).
+- `blk`: getekende randen die **feitelijk versperd** zijn: ≥2 verschillende treinen in
+  de laatste 90 min als opgeheven/overgeslagen gemeld en sindsdien géén gerealiseerde
+  passage (een voorspelling heft niet op, een echte passage wel). De client tekent ze
+  als rode stippellijn; een rand kan tegelijk in `seg` en `blk` staan.
 - Delta's komen uitsluitend uit paren van **expliciete** StopTimeUpdates (GTFS-RT
   propageert delays impliciet; impliciete paren zijn per definitie 0).
 

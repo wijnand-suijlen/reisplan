@@ -19,7 +19,8 @@ def kleurklasse(p90_delta_s: int) -> int:
     return 3      # red
 
 
-def bouw_snapshot(dekking: dict, venster: dict, incidenten: list[dict]) -> dict:
+def bouw_snapshot(dekking: dict, venster: dict, incidenten: list[dict],
+                  blokkades: list[str] | None = None) -> dict:
     return {
         "v": 1,
         "t": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -29,6 +30,7 @@ def bouw_snapshot(dekking: dict, venster: dict, incidenten: list[dict]) -> dict:
             for segment, (p90, n) in sorted(venster.items())
         ],
         "inc": [i for i in incidenten if i["pos"] is not None],
+        "blk": blokkades or [],  # getekende randen die feitelijk versperd zijn
     }
 
 

@@ -66,6 +66,7 @@ class _StopState:
     delay_s: int
     event_ts: int
     seen: float
+    cancelled: bool = False
 
 
 class DbTimetablesSource:
@@ -163,19 +164,19 @@ class DbTimetablesSource:
         return head, int(idx_str), service_date
 
     def _record(self, head: str, idx: int, cluster: str, delay: int, event_ts: int,
-                service_date: str, now: float, statisch: Statisch,
-                seg_obs: list, stop_obs: list) -> None:
+                service_date: str, now: float, statisch: Statisch, out: dict,
+                cancelled: bool = False) -> None:
         trip_ref = self.trip_labels.get(head, f"iris:{head}")
-        stop_obs.append(StopObs(trip_ref, cluster, delay, service_date))
-        self.trip_state.setdefault(head, {})[idx] = _StopState(cluster, delay, event_ts, now)
-        self._emit_deltas(head, idx, statisch, seg_obs)
+        if not cancelled:
+            out["stops"].append(StopObs(trip_ref, cluster, delay, service_date))
+        self.trip_state.setdefault(head, {})[idx] = _StopState(
+            cluster, delay, event_ts, now, cancelled)
+        self._emit_deltas(head, idx, statisch, now, out)
 
-    def _process_station(self, eva: str, now: float, statisch: Statisch):
-        seg_obs: list[SegObs] = []
-        stop_obs: list[StopObs] = []
+    def _process_station(self, eva: str, now: float, statisch: Statisch, out: dict):
         data = self._get(f"/fchg/{eva}")
         if data is None:
-            return seg_obs, stop_obs
+            return
         self._ensure_plan(eva, now)
         plan = self.plan.get(eva, {})
         cluster = self.stations[eva]["cluster_id"]
@@ -188,24 +189,35 @@ class DbTimetablesSource:
                 continue
             head, idx, service_date = parts
             delay = event_ts = None
+            cancelled = False
             plan_stop = plan.get(sid)
             for kind in ("ar", "dp"):  # prefer arrival
                 el = s.find(kind)
-                if el is None or el.get("cs") == "c" or not el.get("ct"):
+                if el is None:
                     continue
-                ct = parse_iris_time(el.get("ct"))
                 pt = (parse_iris_time(el.get("pt")) if el.get("pt") else None) or (
                     plan_stop and (plan_stop.pt_arr if kind == "ar" else plan_stop.pt_dep))
+                if el.get("cs") == "c":
+                    cancelled = True
+                    event_ts = event_ts or pt
+                    continue
+                if not el.get("ct"):
+                    continue
+                ct = parse_iris_time(el.get("ct"))
                 if ct is None or pt is None:
                     continue
-                delay, event_ts = ct - pt, pt
+                delay, event_ts, cancelled = ct - pt, pt, False
                 break
-            if delay is None or not (
+            if event_ts is None or not (
                 now - EVENT_WINDOW_PAST_S <= event_ts <= now + EVENT_WINDOW_FUTURE_S
             ):
                 continue
-            self._record(head, idx, cluster, delay, event_ts, service_date,
-                         now, statisch, seg_obs, stop_obs)
+            if cancelled:
+                self._record(head, idx, cluster, 0, event_ts, service_date,
+                             now, statisch, out, cancelled=True)
+            elif delay is not None:
+                self._record(head, idx, cluster, delay, event_ts, service_date,
+                             now, statisch, out)
         # Trains in the plan but absent from fchg run as scheduled — that is how DB's
         # own departure boards read IRIS. Synthesise delay-0 observations for recently
         # passed stops so DE gets the same green baseline as the GTFS-RT countries.
@@ -219,11 +231,10 @@ class DbTimetablesSource:
             if parts is None:
                 continue
             head, idx, service_date = parts
-            self._record(head, idx, cluster, 0, pt, service_date,
-                         now, statisch, seg_obs, stop_obs)
-        return seg_obs, stop_obs
+            self._record(head, idx, cluster, 0, pt, service_date, now, statisch, out)
 
-    def _emit_deltas(self, head: str, idx: int, statisch: Statisch, seg_obs: list) -> None:
+    def _emit_deltas(self, head: str, idx: int, statisch: Statisch, now: float,
+                     out: dict) -> None:
         """Pair the updated stop with its nearest known neighbours along the trip."""
         state = self.trip_state[head]
         known = sorted(state)
@@ -236,11 +247,22 @@ class DbTimetablesSource:
         trip_ref = self.trip_labels.get(head, f"iris:{head}")
         for a, b in pairs:
             s_from, s_to = state[a], state[b]
-            delta = s_to.delay_s - s_from.delay_s
-            if s_from.cluster == s_to.cluster or abs(delta) > MAX_SANE_DELTA_S:
+            if s_from.cluster == s_to.cluster:
                 continue
-            for fine, fraction in statisch.verfijn(segment_id(s_from.cluster, s_to.cluster)):
-                seg_obs.append(SegObs(fine, trip_ref, round(delta * fraction)))
+            fine_segments = statisch.verfijn(segment_id(s_from.cluster, s_to.cluster))
+            if s_from.cancelled and s_to.cancelled:
+                out["cancels"] += [(fine, trip_ref) for fine, _ in fine_segments]
+                continue
+            if s_from.cancelled or s_to.cancelled:
+                continue
+            delta = s_to.delay_s - s_from.delay_s
+            if abs(delta) > MAX_SANE_DELTA_S:
+                continue
+            realized = s_from.event_ts <= now and s_to.event_ts <= now
+            for fine, fraction in fine_segments:
+                out["segs"].append(SegObs(fine, trip_ref, round(delta * fraction)))
+                if realized:
+                    out["passages"].append(fine)
 
     def _prune(self, now: float) -> None:
         if now - self.last_prune < 600:
@@ -260,29 +282,28 @@ class DbTimetablesSource:
 
     # -- main-loop interface ---------------------------------------------------
 
-    def poll(self, statisch: Statisch, opslag) -> None:
+    def poll(self, statisch: Statisch, opslag, blokkades) -> None:
         now = time.time()
         if not self.stations:
             self.volgende = now + 300
             return
         try:
-            seg_all: list[SegObs] = []
-            stop_all: list[StopObs] = []
+            out = {"segs": [], "stops": [], "cancels": [], "passages": []}
             handled = 0
             while (self.queue and handled < BATCH_SIZE
                    and self.queue[0][0] <= now and self._budget_left() > 3):
                 _, eva = heapq.heappop(self.queue)
-                seg, stops = self._process_station(eva, now, statisch)
-                seg_all += seg
-                stop_all += stops
+                self._process_station(eva, now, statisch, out)
                 handled += 1
                 interval = TIER_INTERVAL_S[self.stations[eva]["tier"]]
                 heapq.heappush(self.queue, (now + interval, eva))
             if handled:
-                changed = opslag.bewaar(self.cfg.land, seg_all, stop_all)
+                changed = opslag.bewaar(self.cfg.land, out["segs"], out["stops"])
+                blokkades.note_cancels(out["cancels"], now)
+                blokkades.note_passages(out["passages"], now)
                 self.laatste_ok = now
-                log.info("de: %d stations, %d segment obs, %d changed stop obs",
-                         handled, len(seg_all), changed)
+                log.info("de: %d stations, %d segment obs, %d changed stop obs, %d cancel obs",
+                         handled, len(out["segs"]), changed, len(out["cancels"]))
             self._prune(now)
             self.backoff = POLL_TICK_S
         except Exception as e:

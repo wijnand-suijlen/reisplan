@@ -10,13 +10,13 @@ from .config import RT_ARCHIEF, WEB_DATA
 
 
 def kleurklasse(p90_delta_s: int) -> int:
-    if p90_delta_s <= 0:
-        return 0  # groen
+    if p90_delta_s < 60:
+        return 0  # green: under a minute does not count as delay (owner decision 2026-08-10)
     if p90_delta_s <= 120:
-        return 1  # geel
+        return 1  # yellow
     if p90_delta_s <= 600:
-        return 2  # oranje
-    return 3      # rood
+        return 2  # orange
+    return 3      # red
 
 
 def bouw_snapshot(dekking: dict, venster: dict, incidenten: list[dict]) -> dict:

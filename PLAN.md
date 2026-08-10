@@ -122,7 +122,7 @@ Prijs kent twee niveaus van waarheid: **prijsindicatie** (uit tariefregels berek
 
 **Fase 0.5 — vertragingskaart (realtime netwerkvisualisatie)** *(toegevoegd én gebouwd 2026-08-09; NL+FR live, BE/CH wachten op keys — zie TODO.md. Aggregator: `uv run aggregator`; viewer: `python3 -m http.server 8137 -d web/vertragingskaart` → http://localhost:8137. Live geverifieerd tegen rijdendetreinen.nl: de storing Utrecht–Geldermalsen kleurde correct oranje. NB: OVapi-treinen zitten in `trainUpdates.pb`, niet in `tripUpdates.pb`.)*
 
-Live kaart van alle spoorlijnen in de vijf landen, gekleurd naar **opgelopen vertraging per baanvak**: groen = geen, geel = tot 2 min, oranje = tot 10 min, rood = meer; met oorzaak-icoontjes bij incidenten (à la file-/ongevalsiconen in autonavigatie).
+Live kaart van alle spoorlijnen in de vijf landen, gekleurd naar **opgelopen vertraging per baanvak**: groen = minder dan 1 min (telt niet als vertraging), geel = 1–2 min, oranje = tot 10 min, rood = meer; met oorzaak-icoontjes bij incidenten (à la file-/ongevalsiconen in autonavigatie).
 
 Aanpak:
 1. **Segment-mapping**: per trein uit de GTFS-RT trip updates de delta-vertraging tussen opeenvolgende haltes berekenen; per station-paar aggregeren over de treinen van de afgelopen ~30 min (max of hoog percentiel). Delta (niet absolute vertraging) matcht de kleursemantiek: alleen het baanvak wáár tijd verloren gaat kleurt op.

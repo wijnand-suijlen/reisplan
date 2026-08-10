@@ -152,6 +152,24 @@ class DbTimetablesSource:
 
     # -- fchg processing ------------------------------------------------------
 
+    @staticmethod
+    def _split_stop_id(sid: str) -> tuple[str, int, str] | None:
+        """"{tripid}-{start}-{idx}" -> (trip head, stop index, service date)."""
+        head, _, idx_str = sid.rpartition("-")
+        if not idx_str.isdigit():
+            return None
+        start = head.rpartition("-")[2]  # trip start "yymmddHHMM" -> service date
+        service_date = f"20{start[:6]}" if len(start) == 10 and start.isdigit() else ""
+        return head, int(idx_str), service_date
+
+    def _record(self, head: str, idx: int, cluster: str, delay: int, event_ts: int,
+                service_date: str, now: float, statisch: Statisch,
+                seg_obs: list, stop_obs: list) -> None:
+        trip_ref = self.trip_labels.get(head, f"iris:{head}")
+        stop_obs.append(StopObs(trip_ref, cluster, delay, service_date))
+        self.trip_state.setdefault(head, {})[idx] = _StopState(cluster, delay, event_ts, now)
+        self._emit_deltas(head, idx, statisch, seg_obs)
+
     def _process_station(self, eva: str, now: float, statisch: Statisch):
         seg_obs: list[SegObs] = []
         stop_obs: list[StopObs] = []
@@ -161,13 +179,14 @@ class DbTimetablesSource:
         self._ensure_plan(eva, now)
         plan = self.plan.get(eva, {})
         cluster = self.stations[eva]["cluster_id"]
+        changed_ids: set[str] = set()
         for s in ET.fromstring(data).iter("s"):
             sid = s.get("id") or ""
-            head, _, idx_str = sid.rpartition("-")
-            if not idx_str.isdigit():
+            changed_ids.add(sid)
+            parts = self._split_stop_id(sid)
+            if parts is None:
                 continue
-            start = head.rpartition("-")[2]  # trip start "yymmddHHMM" -> service date
-            service_date = f"20{start[:6]}" if len(start) == 10 and start.isdigit() else ""
+            head, idx, service_date = parts
             delay = event_ts = None
             plan_stop = plan.get(sid)
             for kind in ("ar", "dp"):  # prefer arrival
@@ -185,11 +204,23 @@ class DbTimetablesSource:
                 now - EVENT_WINDOW_PAST_S <= event_ts <= now + EVENT_WINDOW_FUTURE_S
             ):
                 continue
-            trip_ref = self.trip_labels.get(head, f"iris:{head}")
-            stop_obs.append(StopObs(trip_ref, cluster, delay, service_date))
-            state = self.trip_state.setdefault(head, {})
-            state[int(idx_str)] = _StopState(cluster, delay, event_ts, now)
-            self._emit_deltas(head, int(idx_str), statisch, seg_obs)
+            self._record(head, idx, cluster, delay, event_ts, service_date,
+                         now, statisch, seg_obs, stop_obs)
+        # Trains in the plan but absent from fchg run as scheduled — that is how DB's
+        # own departure boards read IRIS. Synthesise delay-0 observations for recently
+        # passed stops so DE gets the same green baseline as the GTFS-RT countries.
+        for sid, plan_stop in plan.items():
+            if sid in changed_ids:
+                continue
+            pt = plan_stop.pt_arr or plan_stop.pt_dep
+            if pt is None or not (now - EVENT_WINDOW_PAST_S <= pt <= now):
+                continue
+            parts = self._split_stop_id(sid)
+            if parts is None:
+                continue
+            head, idx, service_date = parts
+            self._record(head, idx, cluster, 0, pt, service_date,
+                         now, statisch, seg_obs, stop_obs)
         return seg_obs, stop_obs
 
     def _emit_deltas(self, head: str, idx: int, statisch: Statisch, seg_obs: list) -> None:

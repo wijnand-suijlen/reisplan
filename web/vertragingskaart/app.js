@@ -8,8 +8,10 @@ const CAUSE_ICOON = {
   DEMONSTRATION: "📢", HOLIDAY: "📅", UNKNOWN_CAUSE: "⚠️", OTHER_CAUSE: "⚠️",
 };
 const LAND_NAAM = { nl: "NL", be: "BE", fr: "FR", de: "DE", ch: "CH" };
-// Databron: lokaal "data/", of een externe basis-URL (bv. R2) via ?data=https://…/
-const DATA_BASE = new URLSearchParams(location.search).get("data") || "data/";
+// Databron: ?data=<url> wint altijd; op GitHub Pages standaard de R2-bucket; lokaal "data/".
+const R2_BASE = "https://pub-2369cd93470e40528dc3aab9ab7fd5e7.r2.dev/";
+const DATA_BASE = new URLSearchParams(location.search).get("data")
+  || (location.hostname.endsWith("github.io") ? R2_BASE : "data/");
 
 const kaart = new maplibregl.Map({
   container: "kaart",

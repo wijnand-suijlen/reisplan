@@ -1,0 +1,30 @@
+name: pages
+
+# Publiceert de vertragingskaart-viewer op GitHub Pages.
+# De data (snapshot + segments) komt van R2; de viewer kiest die bron zelf op *.github.io.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/vertragingskaart/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/vertragingskaart
+      - id: deployment
+        uses: actions/deploy-pages@v4

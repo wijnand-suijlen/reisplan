@@ -29,7 +29,7 @@ Goed nieuws: de oude route met ondertekende NMBS-licentie is vervangen door een 
 - API-key is strikt persoonlijk; delen ⇒ onmiddellijke opschorting.
 - Geen SLA op de gratis tiers; geen garantie op juistheid/beschikbaarheid.
 
-## 3. Duitsland — DB API Marketplace (voor DE op de kaart, iets later nodig)
+## 3. Duitsland — DB API Marketplace — ✅ GEDAAN (2026-08-10; Client ID/key + X.509-cert in `~/.config/reisplan/db-api/`; Timetables API getest: 200 OK)
 
 - [ ] DB-klantaccount (BahnID) aanmaken op **https://developers.deutschebahn.com/** → application aanmaken (Client ID + Secret goed bewaren) → abonneren op **Timetables API, "Nutzungsplan Free"** (60 req/min)
 - Formeel is er een "Freischaltung" door DB; vermoedelijk automatisch, wachttijd onbekend.
@@ -40,7 +40,7 @@ Goed nieuws: de oude route met ondertekende NMBS-licentie is vervangen door een 
 - Aandachtspunt: de ToU bevatten een vertrouwelijkheidsclausule die schuurt met de CC BY-licentie op de dataset — voor ons gebruik (data verwerken in eigen tool) geen praktisch probleem.
 - De exacte per-API-voorwaarden die je bij het abonneren accepteert zitten achter login — even meelezen bij het aanvinken.
 
-## 4. Duitsland — DELFI via opendata-oepnv.de (voor DE-dienstregeling >30 dagen)
+## 4. Duitsland — DELFI via opendata-oepnv.de — ✅ GEDAAN (2026-08-10; login in `~/.config/reisplan/delfi/credentials`; het GTFS-bestand zelf blijkt óók zonder login downloadbaar)
 
 - [ ] Registreren op **https://www.opendata-oepnv.de/ht/de/standards/registrierung** (alleen Duitstalig; aanhef, naam, e-mail, wachtwoord; organisatie/project **optioneel** — privépersoon is prima). Vink de datasetgroep "Deutschlandweite Sollfahrplandaten (GTFS)" aan.
 - Let op checkbox: je geeft DELFI e.V. toestemming je accountgegevens voor contact te gebruiken (EU-verordening vereist die registratie).

@@ -11,6 +11,7 @@
 | FR (SNCF) | 4,7 MB / 1 s | 80 MB | 47.296 | 44.957 |
 | DE-FV (gtfs.de) | 0,4 MB | 2,7 MB | 5.261 | 5.261 |
 | DE-RV (gtfs.de) | 11 MB / 2 s | 78 MB | 100.823 | 100.823 |
+| DE-DELFI *(nagemeten 2026-08-10)* | 451 MB | 4.127 MB | 2.638.853 | 154.047 |
 | CH (opentransportdata) | 211 MB / 35 s | 3.212 MB | 1.840.796 | 254.795 |
 
 Totaal ~5 GB uitgepakt; na filtering en merge: **503.927 trips, 5,8 M stop_times, 39.080 stops, 3.791 routes, 243 agencies**. CH is (verrassend) de grootste feed, groter dan NL, en reikt diep in Frankrijk (stations tot Agde en Aix-en-Provence staan erin).
@@ -80,7 +81,12 @@ Plausibiliteit: de op het oog vreemde Amsterdam→Maastricht-uitkomst bleek **co
 1. **Hosting**: GitHub Actions-ETL + R2/Releases-distributie definitief haalbaar (marges ruim).
 2. **Datasetformaat**: tar.zst of parquet+zstd (~35-40 MB); calendar_dates niet vooraf uitvouwen in het distributieformaat (comprimeert prima), wel bij het laden.
 3. **ETL-verbeteringen**: dienstdag-bewuste dedup; betere naamnormalisatie ("(NL)"-suffix, spellingvarianten); nationale-feed-voorrang per grondgebied; CH-frequencies checken; 714/tram/metro-exclusies zijn gevalideerd.
-4. **DELFI-registratie** nodig om DE verder dan ~30 dagen te plannen (gtfs.de-horizon liep tot 2026-09-07).
+4. **DELFI vervangt gtfs.de voor DE** — nagemeten 2026-08-10 (levering 20260810, registratie gedaan; bestand blijkt zonder login downloadbaar, URL gedateerd → ontdekstap in s0):
+   - Horizon 25-07 t/m **12-12-2026** (volledig dienstregelingjaar) vs. 30 dagen bij gtfs.de-free.
+   - Railfilter: 2.638.853 → 154.047 trips (1.204 routes, 17.461 stops, 2,18 M stop_times) in 4,3 s, piek 1,5 GB — past in de Actions-runner; gefilterd ~15 MB parquet.
+   - **Rijker dan gtfs.de-free**: `trip_short_name` (treinnummers), `bikes_allowed`, `wheelchair_accessible`, `wheelchair_boarding`, `platform_code`, levels/pathways én **shapes** (2,8 MB parquet rail-only) — DE schuift daarmee bij de constraint-kolommen (§4) van "mist alles" naar de NL/BE-klasse, en NL is niet langer het enige land met shapes.
+   - Internationale FV-dekking aanwezig: DB Fernverkehr, ÖBB, SBB, SNCF, Eurostar, FlixTrain, European Sleeper, PKP, ČD, Trenitalia.
+   - Kanttekening: 154 k DELFI-trips vs. 106 k bij gtfs.de (FV+RV) — grotendeels de langere horizon; dedupmodel (§3) opnieuw ijken bij de merge.
 5. **Eurostar** komt uit de NL-feed — monitoren dat dat zo blijft.
 6. **RAPTOR**: architectuur bewezen; volgende stap is de Kotlin-port met voetpaden/transfers en dienstdag-runtime i.p.v. voor-uitgevouwen dag.
 

@@ -10,15 +10,16 @@
 | BE | iRail-mirror: `https://gtfs.irail.be/nmbs/gtfs/latest.zip` | 8,8 MB | ja (NMBS/SNCB) | nee | dagelijks | vrij; officiële NMBS-route (data.belgianmobility.io) vereist licentie-acceptatie |
 | FR | `https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip` | 4,7 MB | ja (TGV inOui+Ouigo, Intercités, TER) | nee | dagelijks; 151 dagen vooruit | vrij, ODbL |
 | DE | gtfs.de: `https://download.gtfs.de/germany/fv_free/latest.zip` (Fernverkehr) + `rv_free/latest.zip` (Regionalverkehr) | 0,4 + 11 MB | ja | nee (alleen in betaald abo) | wekelijks+ | vrij, CC BY 4.0; **30 dagen geldigheid** |
+| DE | DELFI: `https://www.opendata-oepnv.de/fileadmin/datasets/delfi/JJJJMMDD_fahrplaene_gesamtdeutschland_gtfs.zip` (datum in bestandsnaam) | 451 MB (uitgepakt 4,1 GB; stop_times 3,4 GB) | nee — ál het DE-OV; ~1.200 van 29.330 routes zijn spoor (type 2, 101–109) | **ja** (311 MB) | wekelijks, ma | bestand direct zonder login (geverifieerd 2026-08-10; registratie formeel wel vereist), CC BY 4.0; **volledig dienstregelingjaar** |
 | CH | opentransportdata.swiss GTFS-permalink (`…/timetable-2026-gtfs2020/permalink`) | 211 MB | nee — al het CH-OV, filteren | nee (bewust) | 2×/week | vrij via permalink |
 
 Aandachtspunten:
 
 - FR: oude per-segment-feeds (voyages/TER/IC apart) zijn dood sinds jan 2025; alleen de geconsolideerde feed is actueel. Ouigo niet als aparte agency onderscheidbaar; Transilien en Eurostar ontbreken. ~1000 duplicate stops in validatie.
-- DE: DELFI (opendata-oepnv.de) is het alternatief met volledige dienstregelingsperiode — registratie vereist, bevat ál het OV, wekelijkse publicatie. Registratie waarschijnlijk de moeite waard vanwege de 30-dagenhorizon van gtfs.de-free.
+- DE: DELFI geverifieerd 2026-08-10 (levering 20260810): horizon 25-07 t/m **12-12-2026** (einde dienstregelingjaar) vs. 30 dagen bij gtfs.de-free; bevat ook shapes, transfers, pathways en levels. ETL-consequenties: datum in de URL ⇒ nieuwste levering ontdekken (recente maandagen af-proben met HEAD, of de datasetpagina achter login scrapen); 4,1 GB ⇒ streamend rail-filteren, niet alles in het geheugen.
 - CH: trip/service-id's niet stabiel tussen publicaties. Alternatief mét shapes: gtfs.geops.ch (derde partij, niet geverifieerd).
-- Shapes: alleen NL. Kaartweergave elders: geops-aggregaat, OSM-spoordata, of hemelsbrede lijnen in v1.
-- Onbevestigd: volledigheid internationale treinen (ICE International/Eurostar) in de NL-feed; of gtfs.de FlixTrain bevat.
+- Shapes: NL en DE (DELFI). Kaartweergave elders: geops-aggregaat, OSM-spoordata, of hemelsbrede lijnen in v1.
+- Onbevestigd: volledigheid internationale treinen (ICE International/Eurostar) in de NL-feed. (De gtfs.de/FlixTrain-vraag is vervallen: DELFI bevat FlixTrain, Eurostar, European Sleeper, ÖBB, SNCF, SBB e.a. — geverifieerd 2026-08-10.)
 
 ## 2. Realtime reisinformatie
 

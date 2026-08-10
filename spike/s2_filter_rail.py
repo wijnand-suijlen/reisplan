@@ -19,7 +19,7 @@ RAW = ROOT / "data" / "raw"
 FILTERED = ROOT / "data" / "filtered"
 METINGEN = ROOT / "data" / "metingen.csv"
 
-FEEDS = ["nl", "be", "fr", "de_fv", "de_rv", "ch"]
+FEEDS = ["nl", "be", "fr", "de_fv", "de_rv", "de_delfi", "ch"]
 RAIL_FILTER = "(route_type::INT = 2 OR route_type::INT BETWEEN 100 AND 117)"
 
 

@@ -13,10 +13,12 @@ alleen in `.env` (laptop en VM, beide buiten git) en in de GitHub-secrets.*
 | **Google Cloud** | project met de **e2-micro-VM** (aggregator + collector, systemd-services `reisplan-aggregator` en `reisplan-statisch`); budgetalarm | https://console.cloud.google.com → Compute Engine (VM verwijderen) en Billing (account sluiten) | €0 (always-free; hooguit centen egress) |
 | **opentransportdata.swiss** (Zwitserland) | account + **4 API-keys**: GTFS-RT (`CH_API_KEY`), GTFS-SA (`CH_SA_KEY`), Train Formation (`CH_TRAINFORM_KEY`, nog ongebruikt, voor fase 2), OJP Fare (`CH_FARE_KEY`, idem) | https://api-manager.opentransportdata.swiss/ | €0 |
 | **Belgian Mobility / NMBS** | account + subscription-key (`BE_API_KEY`, header `bmc-partner-key`) | https://data.belgianmobility.io/ (Developer Portal → Profile) | €0 |
+| **DB API Marketplace** (Duitsland) | BahnID-account + application met `DB_CLIENT_ID`/`DB_API_KEY` (Timetables API, Nutzungsplan Free) + zelf-ondertekend X.509-certificaat van de inschrijving | https://developers.deutschebahn.com/ | €0 |
+| **DELFI / opendata-oepnv.de** (Duitsland) | account (login in `~/.config/reisplan/delfi/credentials` op de laptop); GTFS-download zelf blijkt zonder login te werken | https://www.opendata-oepnv.de/ (profiel) | €0 |
 
 ## Waar de keys fysiek staan (bij opruimen ook legen)
 
-- Laptop: `~/Documents/src/reisplan/.env`
+- Laptop: `~/Documents/src/reisplan/.env` en `~/.config/reisplan/` (DB-certificaat + DELFI-login)
 - VM: `~/reisplan/.env` (op de e2-micro)
 - GitHub: repo → Settings → Secrets and variables → Actions (`R2_ENDPOINT`,
   `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`)
@@ -31,8 +33,6 @@ alleen in `.env` (laptop en VM, beide buiten git) en in de GitHub-secrets.*
 
 ## Nog niet aangemaakt (staat op TODO.md; dus ook niets op te ruimen)
 
-- DB API Marketplace (developers.deutschebahn.com) — voor DE op de kaart
-- DELFI / opendata-oepnv.de — DE-dienstregeling verder dan 30 dagen
 - NS API-portaal (apiportal.ns.nl) — fase 1/2 (prijzen, storingen, materieel)
 - NDOV Loket (reisinformatiegroep.nl/ndovloket) — fase 2/3
 

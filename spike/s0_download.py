@@ -24,8 +24,25 @@ FEEDS = {
     "fr": "https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip",
     "de_fv": "https://download.gtfs.de/germany/fv_free/latest.zip",
     "de_rv": "https://download.gtfs.de/germany/rv_free/latest.zip",
+    "de_delfi": "delfi",  # datum in bestandsnaam; URL wordt ontdekt in delfi_url()
     "ch": "https://data.opentransportdata.swiss/en/dataset/timetable-2026-gtfs2020/permalink",
 }
+
+# DELFI publiceert wekelijks (ma) onder een gedateerde naam; bestand is zonder login
+# bereikbaar. We proben terug vanaf vandaag tot de jongste levering (HEAD).
+DELFI_PATROON = "https://www.opendata-oepnv.de/fileadmin/datasets/delfi/{datum}_fahrplaene_gesamtdeutschland_gtfs.zip"
+
+
+def delfi_url() -> str:
+    from datetime import date, timedelta
+
+    for terug in range(21):
+        datum = (date.today() - timedelta(days=terug)).strftime("%Y%m%d")
+        url = DELFI_PATROON.format(datum=datum)
+        r = requests.head(url, headers={"User-Agent": USER_AGENT}, timeout=30)
+        if r.status_code == 200:
+            return url
+    raise RuntimeError("geen DELFI-levering gevonden in de afgelopen 21 dagen")
 
 
 def meet(stap: str, feed: str, metric: str, waarde) -> None:
@@ -71,7 +88,8 @@ def uitpakken(feed: str, zippad: Path) -> None:
 def main() -> None:
     alleen = sys.argv[1:] or list(FEEDS)
     for feed in alleen:
-        zippad = download(feed, FEEDS[feed])
+        url = delfi_url() if feed == "de_delfi" else FEEDS[feed]
+        zippad = download(feed, url)
         uitpakken(feed, zippad)
 
 

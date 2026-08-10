@@ -285,7 +285,11 @@ def main():
     rows = repareer_nulpunt(bouw_stations(con))
     cluster_stations(con, rows)
     rapport_grensstations(con)
-    dup_trips(con)
+    import os
+    if os.environ.get("REISPLAN_SLA_DUPDETECTIE_OVER"):
+        print("duplicaatdetectie overgeslagen (alleen nodig voor spike-rapportage)", flush=True)
+    else:
+        dup_trips(con)
     duur = time.monotonic() - t0
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     meet("s3", "duur_s", f"{duur:.1f}")

@@ -17,6 +17,7 @@ import json
 import duckdb
 
 from . import r2
+from .closure_baseline import LOOKAHEAD_DAYS, build_planned_closures
 from .config import DATA, MERGED_DB, WEB_DATA, laad_env
 from .verfijning import bouw_verfijning
 
@@ -149,6 +150,9 @@ def main() -> None:
     )
     print(f"segments.geojson: {len(features)} getekende randen ({n_fallback} rechte-lijn-fallbacks); "
           f"{n_verfijnd} grove segmenten verfijnd; {len(segment_randen)} segmenten gemapt")
+
+    n_closures = build_planned_closures(con)
+    print(f"planned_closures: {n_closures} rand-dag-blokken (komende {LOOKAHEAD_DAYS} dagen)")
 
 
 if __name__ == "__main__":

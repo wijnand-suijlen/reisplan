@@ -33,7 +33,10 @@ properties `van`/`naar` (stationsnamen), geometrie een LineString (v1: rechte li
   },
   "seg": [["uic:8400058|uic:8400319", 3, 720, 4]],
   "inc": [{"land": "be", "cause": "STRIKE", "effect": "REDUCED_SERVICE",
-            "txt": "…", "pos": [4.32, 50.85], "cluster": "uic:8814001"}]
+            "txt": "…", "pos": [4.32, 50.85], "cluster": "uic:8814001"}],
+  "blk": ["E1025057532-4335755650"],
+  "wrk": [["ns", "closed", "2026-08-21 02:00", "Utrecht - 's-Hertogenbosch.", ["E1025057532-4335755650"]],
+          ["plan", "closed", null, null, ["E43548047-5238671188"]]]
 }
 ```
 
@@ -53,6 +56,18 @@ properties `van`/`naar` (stationsnamen), geometrie een LineString (v1: rechte li
   de laatste 90 min als opgeheven/overgeslagen gemeld en sindsdien géén gerealiseerde
   passage (een voorspelling heft niet op, een echte passage wel). De client tekent ze
   als rode stippellijn; een rand kan tegelijk in `seg` en `blk` staan.
+- `wrk`: **werkzaamheden/aangepaste dienst**, gegroepeerd per melding:
+  `[bron, ernst, tot, tekst, [rand-ids]]`. Bron: `"plan"` (generiek signaal — nul
+  geplande treinen tegen de baseline uit de statische GTFS, tabel `planned_closures`),
+  `"ns"` (NS-disruptions-API, incl. deeltraject-parsing uit de situation-tekst),
+  `"sncf"` (Navitia NO_SERVICE), `"be"` (NMBS-alerts, trajectnaam-matching). Ernst:
+  `"closed"` (gepland buiten dienst — rode puntjeslijn), `"reduced"` (spoor open,
+  aangepaste/verminderde dienst — oranje), `"intl"` (alleen internationaal verkeer
+  gestremd, binnenlands rijdt — blauw). `tot` is lokale tijd `"YYYY-MM-DD HH:MM"` of
+  `null`; `tekst` een korte omschrijving of `null` (het generieke signaal heeft geen
+  van beide). Een rand mag tegelijk in `seg`, `blk` én `wrk` staan (`blk` = feitelijk
+  versperd wint visueel; binnen `wrk` wint de zwaarste ernst). Randen die door een
+  feed-melding gedekt zijn, komen niet nogmaals in de `plan`-groep.
 - Delta's komen uitsluitend uit paren van **expliciete** StopTimeUpdates (GTFS-RT
   propageert delays impliciet; impliciete paren zijn per definitie 0).
 

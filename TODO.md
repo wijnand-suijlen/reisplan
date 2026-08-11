@@ -47,7 +47,7 @@ Goed nieuws: de oude route met ondertekende NMBS-licentie is vervangen door een 
 
 **Voorwaarden**: data CC BY 4.0, attributie **DELFI e.V.**; commercieel gebruik en doorlevering toegestaan. Platform-regels: geen overmatige belasting van de infrastructuur (wekelijkse bulkdownload is precies de bedoeling), merken niet gebruiken, toegang kan bij overlast worden ingetrokken, geen garanties. Publicatie: wekelijks op maandag, volledig dienstregelingjaar per levering.
 
-## 5. Nederland — NS API-portaal (voor fase 1/2: prijzen, storingen, Virtual Train; kan wachten)
+## 5. Nederland — NS API-portaal — ✅ GEDAAN (2026-08-11, Reisinformatie-API-key in `~/.config/reisplan/ns-api/` en .env als `NS_API_KEY`; disruptions-endpoint live op de vertragingskaart. SNCF-key kwam dezelfde dag binnen: `~/.config/reisplan/sncf-api/`, .env `SNCF_API_KEY`)
 
 - [ ] Account op **https://apiportal.ns.nl/** → registreer als **"Externe bezoeker"** → bevestigingsmail (paar minuten) → dan pas wordt de API-catalogus zichtbaar
 - [ ] Subscription nemen op (t.z.t.): Reisinformatie API (incl. prijs-endpoint), Virtual Train API, Stations-API — key verschijnt op je profielpagina, mogelijk na goedkeuring

@@ -2,17 +2,22 @@
 een snapshot. Per-bron exponentiële backoff bij fouten; If-Modified-Since waar mogelijk."""
 
 import logging
+import os
 import time
 
 import requests
 
 from . import archive, r2
+from .alert_closures import edge_groups_from_alerts
 from .alerts import verwerk_alerts
 from .blockades import BlockadeTracker
 from .config import WEB_DATA, bronnen
 from .db_timetables import DbTimetablesSource
-from .delta import verwerk_tripupdates
+from .delta import parse_feed, verwerk_tripupdates
+from .disruptions_ns import NsDisruptionsSource
+from .disruptions_sncf import SncfDisruptionsSource
 from .opslag import Opslag
+from .planned_closures import PlannedClosures
 from .snapshot import bouw_snapshot, schrijf_snapshot
 from .statisch import Statisch
 
@@ -29,6 +34,7 @@ class Bron:
         self.laatste_ok: float | None = None
         self.last_modified: dict[str, str] = {}
         self.incidenten: list[dict] = []
+        self.alert_groups: list = []  # werkzaamheden uit alerts (BE), zie alert_closures
 
     def poll(self, statisch: Statisch, opslag: Opslag, blokkades: BlockadeTracker) -> None:
         cfg = self.cfg
@@ -48,7 +54,9 @@ class Bron:
                 pb = self._haal(cfg.alerts_url, cfg.alerts_headers)
                 if pb is not None:
                     self.incidenten = verwerk_alerts(pb, cfg.feed_prefix, cfg.land, statisch)
-                    log.info("%s: %d alerts", cfg.land, len(self.incidenten))
+                    self.alert_groups = edge_groups_from_alerts(parse_feed(pb), cfg.land, statisch)
+                    log.info("%s: %d alerts, %d werkzaamheden-groepen",
+                             cfg.land, len(self.incidenten), len(self.alert_groups))
                 self.volgende_alerts = time.time() + (cfg.alerts_interval_s or cfg.interval_s)
             self.laatste_ok = time.time()
             self.backoff = cfg.interval_s
@@ -84,9 +92,17 @@ def main() -> None:
     blokkades = BlockadeTracker()
     actief = [DbTimetablesSource(cfg) if cfg.kind == "db-timetables" else Bron(cfg)
               for cfg in bronnen()]
+    closures = PlannedClosures()
+    # disruption feeds (werkzaamheden/storingen) — aan zodra hun key in .env staat
+    disrupties = []
+    if os.environ.get("NS_API_KEY"):
+        disrupties.append(NsDisruptionsSource())
+    if os.environ.get("SNCF_API_KEY"):
+        disrupties.append(SncfDisruptionsSource())
     log.info(
-        "gestart; bronnen: %s; R2-upload: %s",
+        "gestart; bronnen: %s; disruptions: %s; R2-upload: %s",
         ", ".join(f"{b.cfg.land}={'aan' if b.cfg.enabled else b.cfg.status}" for b in actief),
+        ", ".join(d.src for d in disrupties) or "geen",
         "aan" if r2.actief() else "uit",
     )
     if r2.actief() and (WEB_DATA / "segments.geojson").exists():
@@ -102,6 +118,9 @@ def main() -> None:
         for bron in actief:
             if bron.cfg.enabled and nu >= bron.volgende:
                 bron.poll(statisch, opslag, blokkades)
+        for disruptie in disrupties:
+            if nu >= disruptie.volgende:
+                disruptie.poll(statisch)
         if nu >= volgende_snapshot:
             dekking = {b.cfg.land: b.dekking() for b in actief}
             incidenten = [i for b in actief for i in b.incidenten]
@@ -119,14 +138,24 @@ def main() -> None:
                 venster[rand] = (p90, len(rand_trips[rand]))
             geblokkeerd = sorted({rand for seg in blokkades.blocked_segments(nu)
                                   for rand in statisch.randen(seg)})
-            snap = bouw_snapshot(dekking, venster, incidenten, geblokkeerd)
+            # werkzaamheden: disruption-feeds + BE-alerts; het generieke baseline-
+            # signaal vult aan waar geen feed iets meldt (rijkere info wint)
+            werk = [g for d in disrupties for g in d.groups]
+            werk += [g for b in actief for g in getattr(b, "alert_groups", [])]
+            gedekt = {rand for *_, randen in werk for rand in randen}
+            plan_randen = closures.active_edges(nu) - gedekt
+            if plan_randen:
+                # nul geplande treinen tegen de baseline = volledige sluiting
+                werk.insert(0, ("plan", "closed", None, None, sorted(plan_randen)))
+            snap = bouw_snapshot(dekking, venster, incidenten, geblokkeerd, werk)
             data = schrijf_snapshot(snap)
             try:
                 r2.upload("snapshot.json", data, "application/json")
             except Exception as e:
                 log.warning("R2-upload snapshot mislukt: %s", e)
-            log.info("snapshot: %d segmenten, %d incidenten, %d versperd, %d bytes",
-                     len(snap["seg"]), len(snap["inc"]), len(geblokkeerd), len(data))
+            log.info("snapshot: %d segmenten, %d incidenten, %d versperd, %d werk-randen, %d bytes",
+                     len(snap["seg"]), len(snap["inc"]), len(geblokkeerd),
+                     len({r for w in snap["wrk"] for r in w[4]}), len(data))
             volgende_snapshot = nu + 60
         archive.run_if_due()
         time.sleep(1)

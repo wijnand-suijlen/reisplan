@@ -7,6 +7,15 @@ if (matchMedia("(max-width: 640px)").matches) {
   document.getElementById("legenda-details").removeAttribute("open");
 }
 const GEEN_DATA = "#9a9a97";
+// werkzaamheden-ernst: closed = gepland buiten dienst, reduced = aangepaste dienst,
+// intl = alleen internationaal verkeer gestremd (binnenlands rijdt gewoon)
+const WERK_KLEUR = { closed: "#d03b3b", reduced: "#e8940a", intl: "#2456c9" };
+const WERK_LABEL = {
+  closed: "🚧 werkzaamheden — gepland buiten dienst",
+  reduced: "🚧 werkzaamheden — aangepaste dienst",
+  intl: "🌍 internationale verbinding gestremd",
+};
+const WERK_RANG = { closed: 3, intl: 2, reduced: 1 };
 const CAUSE_ICOON = {
   ACCIDENT: "💥", TECHNICAL_PROBLEM: "🔧", CONSTRUCTION: "🚧", MAINTENANCE: "🚧",
   STRIKE: "✊", WEATHER: "🌧️", MEDICAL_EMERGENCY: "🚑", POLICE_ACTIVITY: "🚓",
@@ -42,6 +51,7 @@ const kaart = new maplibregl.Map({
 });
 
 let bekendeSegmenten = new Set();
+let werkInfo = new Map(); // rand-id -> {src, until, txt} uit snap.wrk
 
 kaart.on("load", async () => {
   kaart.addSource("segmenten", { type: "geojson", data: `${DATA_BASE}segments.geojson`, promoteId: "id" });
@@ -62,6 +72,17 @@ kaart.on("load", async () => {
         GEEN_DATA],
       "line-width": ["case", [">=", ["coalesce", ["feature-state", "k"], -1], 1], 3, 2],
       "line-opacity": ["case", ["==", ["coalesce", ["feature-state", "k"], -1], -1], 0.45, 0.95],
+    },
+  });
+  // werkzaamheden: puntjeslijn, kleur naar ernst (onder de blok-laag: de-facto wint)
+  kaart.addLayer({
+    id: "seg-werk", type: "line", source: "segmenten",
+    paint: {
+      "line-color": ["match", ["coalesce", ["feature-state", "werk"], ""],
+        "closed", WERK_KLEUR.closed, "intl", WERK_KLEUR.intl, WERK_KLEUR.reduced],
+      "line-width": 4.5,
+      "line-dasharray": [0.8, 1.2],
+      "line-opacity": ["case", ["!=", ["coalesce", ["feature-state", "werk"], ""], ""], 1, 0],
     },
   });
   // versperde baanvakken: rode stippellijn eroverheen (à la wegafsluitingen)
@@ -90,13 +111,29 @@ async function ververs() {
 
   const nieuw = new Set();
   const blok = new Set(snap.blk || []);
+  werkInfo = new Map();
+  for (const [src, sev, until, txt, randen] of snap.wrk || []) {
+    for (const id of randen) { // bij overlap wint de zwaarste categorie
+      const oud = werkInfo.get(id);
+      if (!oud || (WERK_RANG[sev] || 0) > (WERK_RANG[oud.sev] || 0)) {
+        werkInfo.set(id, { src, sev, until, txt });
+      }
+    }
+  }
   for (const [id, k, p90, n] of snap.seg) {
-    kaart.setFeatureState({ source: "segmenten", id }, { k, p90, n, blok: blok.has(id) });
+    kaart.setFeatureState({ source: "segmenten", id },
+      { k, p90, n, blok: blok.has(id), werk: werkInfo.get(id)?.sev ?? "" });
     nieuw.add(id);
   }
   for (const id of blok) {
     if (!nieuw.has(id)) { // versperd zónder kleurwaarnemingen — het normale geval
       kaart.setFeatureState({ source: "segmenten", id }, { blok: true });
+      nieuw.add(id);
+    }
+  }
+  for (const [id, w] of werkInfo) {
+    if (!nieuw.has(id)) { // buiten dienst zónder waarnemingen — het normale geval
+      kaart.setFeatureState({ source: "segmenten", id }, { werk: w.sev });
       nieuw.add(id);
     }
   }
@@ -156,7 +193,13 @@ function koppelTooltip() {
       ? `<span class="sub">geen recente waarneming</span>`
       : `<span class="sub">p90 opgelopen: ${Math.round(st.p90 / 60)} min · ${st.n} trein(en), 30 min</span>`;
     const versperd = st.blok ? `<div>🚫 versperd — treinen vallen hier uit</div>` : "";
-    toon(e, `<div class="kop">${f.properties.lijnen}</div>${versperd}${detail}`);
+    let werk = "";
+    if (werkInfo.has(f.id)) {
+      const w = werkInfo.get(f.id);
+      const extra = [w.until && `tot ${w.until}`, w.txt].filter(Boolean).join(" · ");
+      werk = `<div>${WERK_LABEL[w.sev] || WERK_LABEL.reduced}${extra ? `<br><span class="sub">${extra}</span>` : ""}</div>`;
+    }
+    toon(e, `<div class="kop">${f.properties.lijnen}</div>${versperd}${werk}${detail}`);
     kaart.getCanvas().style.cursor = "pointer";
   });
   kaart.on("mouseleave", "seg", () => {

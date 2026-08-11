@@ -26,6 +26,9 @@ body { font: 13px/1.45 system-ui, sans-serif; color: #2b2b28; }
 .legenda div { display: flex; align-items: center; gap: 6px; margin: 2px 0; }
 .legenda .lijn { width: 22px; height: 4px; border-radius: 2px; display: inline-block; }
 .legenda .lijn-blok { background: repeating-linear-gradient(90deg, #d03b3b 0 5px, transparent 5px 9px); }
+.legenda .lijn-werk { background: repeating-linear-gradient(90deg, #e8940a 0 4px, transparent 4px 9px); height: 5px; }
+.legenda .lijn-werk-dicht { background: repeating-linear-gradient(90deg, #d03b3b 0 4px, transparent 4px 9px); height: 5px; }
+.legenda .lijn-werk-intl { background: repeating-linear-gradient(90deg, #2456c9 0 4px, transparent 4px 9px); height: 5px; }
 
 .voetnoot { margin-top: 10px; color: #8a8a85; font-size: 11px; }
 

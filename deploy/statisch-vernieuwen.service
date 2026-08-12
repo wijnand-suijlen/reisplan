@@ -1,11 +1,20 @@
 [Unit]
 Description=Reisplan statische data vernieuwen (feeds -> merge -> segments)
-# De aggregator leest merged.duckdb alleen bij start; na verversing herstarten we hem.
-# De stappen staan in deploy/vernieuw.sh zodat ze via git pull mee-updaten.
+# De aggregator houdt merged.duckdb permanent read-only open (trip-lookups voor de
+# blokkadedetectie); dat gedeelde leesslot blokkeert het schrijfslot van de merge.
+# Daarom stopt de aggregator alleen rond de merge-fase; download + filter draaien
+# gewoon door. ExecStopPost start hem altijd weer op — ook als een fase faalt —
+# en is een no-op als hij al draait.
+# De stappen staan in deploy/vernieuw.sh zodat ze via git pull mee-updaten;
+# wijzigingen aan dít unit-bestand vergen herinstallatie (zie docs/vm-beheer.md).
 
 [Service]
 Type=oneshot
 User=@USER@
 WorkingDirectory=@REPO@
-ExecStart=/bin/bash @REPO@/deploy/vernieuw.sh
-ExecStartPost=+/usr/bin/systemctl restart reisplan-aggregator.service
+ExecStart=/bin/bash @REPO@/deploy/vernieuw.sh voorbereiden
+ExecStart=+/usr/bin/systemctl stop reisplan-aggregator.service
+ExecStart=/bin/bash @REPO@/deploy/vernieuw.sh merge
+ExecStart=+/usr/bin/systemctl start reisplan-aggregator.service
+ExecStart=/bin/bash @REPO@/deploy/vernieuw.sh na
+ExecStopPost=+/usr/bin/systemctl start reisplan-aggregator.service

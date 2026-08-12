@@ -7,7 +7,7 @@
 | Unit | Wat | Wanneer |
 |---|---|---|
 | `reisplan-aggregator.service` | pollt de feeds, schrijft snapshot naar R2, verzamelt punctualiteitsdata | continu; herstart vanzelf na crash of reboot |
-| `reisplan-statisch.timer` → `.service` | dataverversing via `deploy/vernieuw.sh`: **git pull**, uv sync, feeds → filter → merge → segmenten; herstart daarna de aggregator | elke maandag ~04:30 UTC |
+| `reisplan-statisch.timer` → `.service` | dataverversing via `deploy/vernieuw.sh`: **git pull**, uv sync, feeds → filter → merge → segmenten. De aggregator wordt alléén tijdens de merge-fase gestopt (de kaart is dan even zonder verse data) en daarna automatisch weer gestart — ook als de verversing halverwege faalt | elke maandag ~04:30 UTC |
 
 ## Dagelijkse kost
 
@@ -26,7 +26,8 @@ Gezond log = een startregel met `nl=aan, fr=aan, ch=aan, be=aan, de=aan` en `R2-
 sudo systemctl restart reisplan-aggregator   # herstarten (bv. na .env-wijziging)
 sudo systemctl stop reisplan-aggregator      # tijdelijk uit
 sudo systemctl start reisplan-statisch       # dataverversing NU draaien i.p.v. maandag
-                                             # (doet ook git pull + aggregator-herstart)
+                                             # (doet ook git pull; stopt de aggregator
+                                             # kort tijdens de merge en start hem weer)
 ```
 
 Alleen code bijwerken zonder volledige dataverversing:
@@ -34,6 +35,18 @@ Alleen code bijwerken zonder volledige dataverversing:
 ```bash
 cd ~/reisplan && git pull && uv sync --all-packages && sudo systemctl restart reisplan-aggregator
 ```
+
+Na een wijziging aan een unit-bestand in `deploy/` (`.service`/`.timer`): git pull
+alleen is niet genoeg, de unit moet opnieuw geïnstalleerd worden:
+
+```bash
+cd ~/reisplan
+sed "s|@REPO@|$PWD|g; s|@USER@|$USER|g; s|@UV@|$(command -v uv)|g" \
+  deploy/statisch-vernieuwen.service | sudo tee /etc/systemd/system/reisplan-statisch.service >/dev/null
+sudo systemctl daemon-reload
+```
+
+(zelfde patroon voor `aggregator.service` → `reisplan-aggregator.service`; de timer is een kale `sudo cp`.)
 
 API-keys wijzigen: `nano ~/reisplan/.env`, daarna de aggregator herstarten. Voor de DE-bron (DB Timetables) horen er `DB_CLIENT_ID=` en `DB_API_KEY=` in te staan; de bron heeft ook `data/merged/eva_stations.json` nodig (bouwt de wekelijkse verversing via spike/s10, of eenmalig handmatig: `uv run spike/s10_station_eva_map.py`).
 

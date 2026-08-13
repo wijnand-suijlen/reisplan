@@ -19,6 +19,10 @@ body { font: 13px/1.45 system-ui, sans-serif; color: #2b2b28; }
 .st-uit .stip, .st-geen-bron .stip { background: #9a9a97; }
 .st-oud .stip { background: #ec835a; }
 
+#inspectie-link { margin-bottom: 8px; }
+#inspectie-link a { color: #2456c9; text-decoration: none; }
+#inspectie-link a:hover { text-decoration: underline; }
+
 #legenda-details summary {
   color: #6d6d68; cursor: pointer; user-select: none; font-size: 12px;
 }

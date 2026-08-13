@@ -1,0 +1,68 @@
+<!doctype html>
+<!-- reisplan inspectie — ruwe per-trein-data naast de kaart, contract: docs/inspectie-schema.md -->
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Reisplan — inspectie</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="inspectie.css">
+</head>
+<body>
+  <header>
+    <h1>Inspectie vertragingskaart</h1>
+    <a class="kaart-link" href="index.html">← kaart</a>
+    <div id="period" role="radiogroup" aria-label="periode">
+      <label><input type="radio" name="period" value="1800"> 30 min</label>
+      <label><input type="radio" name="period" value="14400" checked> 4 uur</label>
+      <label><input type="radio" name="period" value="86400"> 24 uur</label>
+    </div>
+    <span id="freshness">wacht op gegevens…</span>
+  </header>
+
+  <main>
+    <section id="table-pane">
+      <table id="trains">
+        <thead>
+          <tr>
+            <th data-key="country">Land</th>
+            <th data-key="train_number">Trein</th>
+            <th data-key="origin">Van</th>
+            <th data-key="destination">Naar</th>
+            <th data-key="sched_dep">Vertrek</th>
+            <th data-key="delay_s" class="num" title="actuele vertraging in minuten">Vertr. (min)</th>
+            <th data-key="percentile" class="num" title="percentiel binnen het venster">Pctl</th>
+            <th data-key="last_ts">Laatst gezien</th>
+            <th data-key="n_obs" class="num">Obs</th>
+          </tr>
+        </thead>
+        <tbody id="train-rows"></tbody>
+      </table>
+      <div id="empty-note" hidden>geen waarnemingen in dit venster</div>
+    </section>
+
+    <aside>
+      <section id="histogram-pane">
+        <h2>Punctualiteit <span id="histogram-n"></span></h2>
+        <svg id="histogram" viewBox="0 0 320 170" role="img"
+             aria-label="histogram van vertraging in minuten"></svg>
+        <div class="voetnoot">actuele vertraging per trein, kleuren als op de kaart</div>
+      </section>
+      <section id="detail-pane">
+        <h2>Dienst</h2>
+        <div id="detail"><span class="hint">klik een trein voor de hele dienst</span></div>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="voetnoot">
+    percentiel = positie van de actuele vertraging binnen alle treinen in het gekozen venster ·
+    geplande tijden in lokale feed-tijd (kunnen boven 24:00 uitkomen) ·
+    alleen <em>wijzigingen</em> worden gelogd: een trein zonder recente vertragingswijziging
+    valt uit korte vensters ·
+    de kaart kleurt op <em>opgelopen</em> vertraging per baanvak; deze tabel toont
+    <em>absolute</em> vertraging per trein
+  </footer>
+
+  <script src="inspectie.js"></script>
+</body>
+</html>

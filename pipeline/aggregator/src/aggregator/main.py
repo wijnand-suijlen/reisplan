@@ -7,7 +7,7 @@ import time
 
 import requests
 
-from . import archive, r2
+from . import archive, inspection, r2
 from .alert_closures import edge_groups_from_alerts
 from .alerts import verwerk_alerts
 from .blockades import BlockadeTracker
@@ -158,6 +158,7 @@ def main() -> None:
                      len({r for w in snap["wrk"] for r in w[4]}), len(data))
             volgende_snapshot = nu + 60
         archive.run_if_due()
+        inspection.run_if_due(statisch, opslag)
         time.sleep(1)
 
 

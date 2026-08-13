@@ -1,0 +1,78 @@
+/* inspectiepagina — deelt het palet van style.css (kaart), maar staat er los van */
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; }
+body {
+  font: 13px/1.45 system-ui, sans-serif; color: #2b2b28; background: #fcfcfb;
+  display: flex; flex-direction: column;
+}
+
+header {
+  display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  padding: 10px 14px; border-bottom: 1px solid #d8d8d4;
+}
+header h1 { font-size: 15px; }
+.kaart-link { color: #2456c9; text-decoration: none; }
+.kaart-link:hover { text-decoration: underline; }
+#period { display: flex; gap: 10px; }
+#period label { cursor: pointer; user-select: none; }
+#freshness { color: #6d6d68; margin-left: auto; }
+
+main { flex: 1; display: flex; min-height: 0; }
+
+#table-pane { flex: 1; overflow: auto; min-width: 0; }
+table { border-collapse: collapse; width: 100%; }
+thead th {
+  position: sticky; top: 0; background: #fcfcfb; text-align: left;
+  padding: 6px 8px; border-bottom: 2px solid #d8d8d4;
+  cursor: pointer; user-select: none; white-space: nowrap;
+}
+thead th.num { text-align: right; }
+thead th.sorted-asc::after { content: " ▲"; color: #6d6d68; }
+thead th.sorted-desc::after { content: " ▼"; color: #6d6d68; }
+tbody td { padding: 4px 8px; border-bottom: 1px solid #eeeeea; white-space: nowrap; }
+td.clip { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+td.clip-sm { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+tbody td.num { text-align: right; font-variant-numeric: tabular-nums; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: #f4f4f0; }
+tbody tr.selected { background: #e8eefb; }
+td .sub, .sub { color: #6d6d68; }
+td.delay-neg { color: #2456c9; }
+td.delay-high { color: #d03b3b; font-weight: 600; }
+#empty-note { padding: 24px; color: #6d6d68; }
+
+aside {
+  width: 330px; border-left: 1px solid #d8d8d4; overflow: auto;
+  display: flex; flex-direction: column; flex-shrink: 0;
+}
+aside section { padding: 12px 14px; }
+aside h2 { font-size: 13px; margin-bottom: 8px; }
+#histogram-pane { border-bottom: 1px solid #d8d8d4; }
+#histogram { width: 100%; height: auto; display: block; }
+#histogram .count { font: 10px system-ui, sans-serif; fill: #6d6d68; text-anchor: middle; }
+#histogram .bin { font: 9px system-ui, sans-serif; fill: #6d6d68; text-anchor: middle; }
+#histogram-n { color: #6d6d68; font-weight: normal; }
+
+#detail-pane { flex: 1; }
+#detail .hint { color: #6d6d68; }
+#detail h3 { font-size: 13px; margin-bottom: 2px; }
+#detail .meta { color: #6d6d68; font-size: 11px; margin-bottom: 8px; word-break: break-all; }
+#detail .banner {
+  background: #fdf3e0; border: 1px solid #e8940a; border-radius: 6px;
+  padding: 6px 9px; margin-bottom: 8px; font-size: 12px;
+}
+#detail table { width: 100%; }
+#detail td, #detail th { padding: 3px 5px; font-size: 12px; }
+#detail td:first-child { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#detail th { text-align: left; border-bottom: 1px solid #d8d8d4; position: static; cursor: default; }
+#detail td.num { text-align: right; font-variant-numeric: tabular-nums; }
+#detail tr.unplanned td { color: #8a8a85; font-style: italic; }
+
+footer { padding: 8px 14px; border-top: 1px solid #d8d8d4; }
+.voetnoot { color: #8a8a85; font-size: 11px; }
+
+@media (max-width: 800px) {
+  main { flex-direction: column; }
+  aside { width: auto; border-left: none; border-top: 1px solid #d8d8d4; }
+  #freshness { margin-left: 0; }
+}

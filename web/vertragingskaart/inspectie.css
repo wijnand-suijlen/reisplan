@@ -16,6 +16,14 @@ header h1 { font-size: 15px; }
 #period { display: flex; gap: 10px; }
 #period label { cursor: pointer; user-select: none; }
 #freshness { color: #6d6d68; margin-left: auto; }
+#freshness.stale { color: #b36b00; font-weight: 600; }
+#edge-chip {
+  background: #e8eefb; border: 1px solid #b9c9ec; border-radius: 12px;
+  padding: 2px 10px;
+}
+#edge-chip a { color: #2456c9; }
+.edge-only { display: none; }
+table.edge-mode .edge-only { display: table-cell; }
 
 main { flex: 1; display: flex; min-height: 0; }
 

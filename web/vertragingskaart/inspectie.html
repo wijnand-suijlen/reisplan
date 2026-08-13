@@ -16,6 +16,7 @@
       <label><input type="radio" name="period" value="14400" checked> 4 uur</label>
       <label><input type="radio" name="period" value="86400"> 24 uur</label>
     </div>
+    <span id="edge-chip" hidden></span>
     <span id="freshness">wacht op gegevens…</span>
   </header>
 
@@ -30,9 +31,12 @@
             <th data-key="destination">Naar</th>
             <th data-key="sched_dep">Vertrek</th>
             <th data-key="delay_s" class="num" title="actuele vertraging in minuten">Vertr. (min)</th>
+            <th data-key="edge_delta" class="num edge-only"
+                title="opgelopen vertraging op dit baanvak, laatste passage in het venster">Δ baanvak</th>
             <th data-key="percentile" class="num" title="percentiel binnen het venster">Pctl</th>
             <th data-key="last_ts">Laatst gezien</th>
-            <th data-key="n_obs" class="num">Obs</th>
+            <th data-key="n_obs" class="num"
+                title="aantal ruwe observaties (vertragingswijzigingen) van deze trein in de laatste 24 uur, opgeteld over alle stations — maat voor hoe dik de data onder deze rij is">Obs</th>
           </tr>
         </thead>
         <tbody id="train-rows"></tbody>

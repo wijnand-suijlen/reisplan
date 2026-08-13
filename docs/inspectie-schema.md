@@ -5,12 +5,13 @@ en de inspectiepagina (`web/vertragingskaart/inspectie.html`). Doel: de ruwe
 per-trein-data achter de vertragingskaart inzichtelijk maken om ogenschijnlijke
 tegenstrijdigheden op de kaart te kunnen herleiden.
 
-Elke **300 s** bouwt de aggregator uit de laatste **24 uur** `stop_obs2`
-(observatielog, absolute vertraging per stationscluster) twee artefacten en
-uploadt ze naar R2 onder `inspect/` (gzip, `Cache-Control: max-age=60`); lokaal
-staan kopieën in `web/vertragingskaart/data/inspect/`. De pagina filtert de
-vensters (30 min / 4 u / 24 u) zelf op `last_ts`, dus één 24-uursartefact
-bedient alle drie.
+Elke **300 s** bouwt de aggregator uit de laatste **24 uur** observaties drie
+artefacten en uploadt ze naar R2 onder `inspect/` (gzip, `Cache-Control:
+max-age=60`); lokaal staan kopieën in `web/vertragingskaart/data/inspect/`.
+`trains.json` en `details.json` komen uit `stop_obs2` (observatielog, absolute
+vertraging per stationscluster), `edges.json` uit `seg_obs` (opgelopen delta
+per baanvak-passage). De pagina filtert de vensters (30 min / 4 u / 24 u) zelf
+op `last_ts`, dus één 24-uursartefact bedient alle drie.
 
 **Let op bij het duiden van "tegenstrijdigheden"**: de kaart kleurt op de p90
 van de *opgelopen* vertraging per baanvak (`seg_obs`, delta per segmentpassage,
@@ -93,6 +94,32 @@ Sleutel: `"<country>|<trip_id>|<service_date>"` (trip_ids bevatten geen `|`).
   met `null`-tijden (omleiding of mismatch in de clustering — bewust zichtbaar).
 - `sched_known=false`: stops zijn de waargenomen clusters op volgorde van
   waarneming.
+
+## inspect/edges.json
+
+De koppeling baanvak ↔ treinen, voor het filter `inspectie.html?edge=<rand-id>`
+(een klik op een baanvak op de kaart opent die URL, met `&label=` voor de
+leesbare naam). Per getekende rand de treinen die er in het venster overheen
+reden:
+
+```json
+{
+  "v": 1, "built_at": "2026-08-13T07:35:00Z", "window_s": 86400,
+  "edges": {
+    "E1025057532-4335755650": [[412, 180, 1786514301], [87, 0, 1786514100]]
+  }
+}
+```
+
+- Per passage: `[rij-index in trains.json, delta_s, ts]`, aflopend op delta.
+  `delta_s` is de **opgelopen** vertraging van de laatste passage van die trein
+  over dit baanvak (`seg_obs`) — de getallen achter de kaartkleur, anders dan de
+  absolute vertraging in de tabel. In de UI is dit de kolom "Δ baanvak".
+- De rij-indices verwijzen naar dezelfde build; de pagina vergelijkt `built_at`
+  van beide artefacten en haalt ze bij een mismatch opnieuw op.
+- `seg_obs` heeft geen dienstdatum; een trip_id die binnen het venster op twee
+  dienstdagen rijdt, wordt toegeschreven aan de rij waarvan het
+  observatie-interval het dichtst bij de passage ligt.
 
 ## Kanttekeningen
 

@@ -206,4 +206,19 @@ function koppelTooltip() {
     tip.hidden = true;
     kaart.getCanvas().style.cursor = "";
   });
+  // klik op een baanvak → inspectiepagina gefilterd op die rand. Niet als
+  // laag-klik: die eist een exacte pixeltreffer en mist een 2px-lijn vrijwel
+  // altijd — daarom zelf zoeken met een tolerantiebox rond het klikpunt.
+  kaart.on("click", (e) => {
+    const t = 6;
+    const box = [[e.point.x - t, e.point.y - t], [e.point.x + t, e.point.y + t]];
+    const f = kaart.queryRenderedFeatures(box, { layers: ["seg"] })[0];
+    if (!f) return;
+    const url = new URL("inspectie.html", location.href);
+    url.searchParams.set("edge", f.id);
+    if (f.properties.lijnen) url.searchParams.set("label", f.properties.lijnen);
+    const data = new URLSearchParams(location.search).get("data");
+    if (data) url.searchParams.set("data", data);
+    window.open(url, "_blank");
+  });
 }

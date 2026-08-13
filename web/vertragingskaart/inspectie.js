@@ -4,8 +4,12 @@
    gefilterd op last_ts. Contract: docs/inspectie-schema.md. */
 
 const R2_BASE = "https://pub-2369cd93470e40528dc3aab9ab7fd5e7.r2.dev/";
-const DATA_BASE = new URLSearchParams(location.search).get("data")
+const PARAMS = new URLSearchParams(location.search);
+const DATA_BASE = PARAMS.get("data")
   || (location.hostname.endsWith("github.io") ? R2_BASE : "data/");
+// ?edge=<rand-id> (via klik op de kaart) filtert op treinen die dat baanvak passeerden
+const EDGE_ID = PARAMS.get("edge");
+const EDGE_LABEL = PARAMS.get("label");
 
 const REFRESH_MS = 120_000;
 const DETAILS_MAX_AGE_MS = 300_000;
@@ -35,39 +39,69 @@ let sortDir = -1;            // -1 = aflopend
 let selectedKey = null;
 let details = null;          // { fetchedAt, trains }
 let detailsPromise = null;
+let edgePairs = null;        // rij-index -> [delta_s, ts] voor EDGE_ID (uit edges.json)
+let edgeRetried = false;
 
 function trainKey(t) { return `${t.country}|${t.trip_id}|${t.service_date}`; }
 
 async function fetchTrains() {
-  let payload;
+  let payload, edgesPayload = null;
   try {
-    const resp = await fetch(`${DATA_BASE}inspect/trains.json?t=${Date.now()}`);
-    if (!resp.ok) throw new Error(`http ${resp.status}`);
-    payload = await resp.json();
+    const wanted = [fetch(`${DATA_BASE}inspect/trains.json?t=${Date.now()}`)];
+    if (EDGE_ID) wanted.push(fetch(`${DATA_BASE}inspect/edges.json?t=${Date.now()}`));
+    const resps = await Promise.all(wanted);
+    for (const resp of resps) if (!resp.ok) throw new Error(`http ${resp.status}`);
+    payload = await resps[0].json();
+    if (EDGE_ID) edgesPayload = await resps[1].json();
   } catch (e) {
     el("freshness").textContent = "gegevens niet bereikbaar";
     return;
   }
   const idx = Object.fromEntries(payload.cols.map((c, i) => [c, i]));
-  allTrains = payload.rows.map((r) => {
-    const t = {};
+  allTrains = payload.rows.map((r, i) => {
+    const t = { _idx: i };
     for (const c of payload.cols) t[c] = r[idx[c]];
     return t;
   });
   builtAt = new Date(payload.built_at);
+  if (edgesPayload) {
+    // edges.json verwijst naar rij-indices in trains.json: builds moeten matchen
+    if (edgesPayload.built_at !== payload.built_at && !edgeRetried) {
+      edgeRetried = true;
+      setTimeout(fetchTrains, 3000);
+      return;
+    }
+    edgeRetried = false;
+    edgePairs = new Map((edgesPayload.edges[EDGE_ID] || []).map(([i, d, ts]) => [i, [d, ts]]));
+  }
   render();
 }
 
 function updateFreshness() {
   if (!builtAt) return;
   const ageMin = Math.max(0, Math.round((Date.now() - builtAt.getTime()) / 60000));
+  // artefacten worden elke 5 min gebouwd; veel ouder = aggregator draait niet en
+  // dan lopen de vensters leeg (30 min als eerste)
+  const stale = ageMin > 10;
   el("freshness").textContent =
-    `${allTrains.length} treinen (24 u) · gegevens ${ageMin} min oud`;
+    `${allTrains.length} treinen (24 u) · gegevens ${ageMin} min oud` +
+    (stale ? " ⚠ verouderd — draait de aggregator?" : "");
+  el("freshness").classList.toggle("stale", stale);
 }
 
 function visibleTrains() {
   const floor = Date.now() / 1000 - windowS;
-  return allTrains.filter((t) => t.last_ts >= floor);
+  let trains = allTrains.filter((t) => t.last_ts >= floor);
+  if (EDGE_ID) {
+    if (!edgePairs) return [];
+    trains = trains.filter((t) => {
+      const pair = edgePairs.get(t._idx);
+      if (!pair || pair[1] < floor) return false; // passage moet zelf in het venster liggen
+      t.edge_delta = pair[0];
+      return true;
+    });
+  }
+  return trains;
 }
 
 /* percentiel = inclusieve rang van de actuele vertraging binnen het venster */
@@ -118,6 +152,7 @@ function renderTable(trains) {
       `<td class="clip" title="${esc(t.destination)}">${esc(t.destination)}</td>` +
       `<td>${esc((t.sched_dep || "–").slice(0, 5))}</td>` +
       delayCell(t.delay_s) +
+      (EDGE_ID ? delayCell(t.edge_delta).replace("<td class=\"num", "<td class=\"num edge-only") : "") +
       `<td class="num">p${t.percentile}</td>` +
       `<td class="clip-sm" title="${esc(t.last_stop)}">${formatLastSeen(t)}` +
       ` <span class="sub">${esc(t.last_stop)}</span></td>` +
@@ -223,7 +258,10 @@ document.querySelector("#trains thead").addEventListener("click", (e) => {
   if (!th) return;
   const key = th.dataset.key;
   if (key === sortKey) sortDir = -sortDir;
-  else { sortKey = key; sortDir = key === "delay_s" || key === "percentile" || key === "n_obs" ? -1 : 1; }
+  else {
+    sortKey = key;
+    sortDir = ["delay_s", "edge_delta", "percentile", "n_obs"].includes(key) ? -1 : 1;
+  }
   render();
 });
 
@@ -235,6 +273,18 @@ el("train-rows").addEventListener("click", (e) => {
     row.classList.toggle("selected", row.dataset.key === selectedKey);
   renderDetail();
 });
+
+if (EDGE_ID) {
+  document.getElementById("trains").classList.add("edge-mode");
+  const clear = new URLSearchParams(location.search);
+  clear.delete("edge");
+  clear.delete("label");
+  const chip = el("edge-chip");
+  chip.hidden = false;
+  chip.innerHTML = `baanvak <b>${esc(EDGE_LABEL || EDGE_ID)}</b> ` +
+    `<a href="inspectie.html${clear.toString() ? "?" + clear : ""}">filter wissen</a>`;
+  el("empty-note").textContent = "geen passages op dit baanvak in dit venster";
+}
 
 fetchTrains();
 setInterval(fetchTrains, REFRESH_MS);

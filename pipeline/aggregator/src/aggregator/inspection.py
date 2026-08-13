@@ -6,6 +6,7 @@ docs/inspectie-schema.md):
 
 - inspect/trains.json   one row per (country, trip_id, service_date)
 - inspect/details.json  scheduled stops + observed delays per train
+- inspect/edges.json    per drawn edge the trains that passed it (seg_obs deltas)
 
 The client filters the 30min/4h/24h windows itself on last_ts, so one 24h
 artifact serves all windows. Schedule metadata comes from merged.duckdb through
@@ -35,6 +36,8 @@ META_CACHE_MAX = 20_000
 COLS = ["country", "trip_id", "service_date", "train_number", "route",
         "origin", "destination", "sched_dep", "sched_arr",
         "delay_s", "last_stop", "first_ts", "last_ts", "n_obs", "sched_known"]
+COUNTRY_I, TRIP_I = COLS.index("country"), COLS.index("trip_id")
+FIRST_TS_I, LAST_TS_I = COLS.index("first_ts"), COLS.index("last_ts")
 
 _next_build = 0.0
 _meta_cache: dict[tuple[str, str], "TripMeta | None"] = {}  # None = known miss (e.g. DE)
@@ -112,13 +115,54 @@ def _build(statisch, opslag) -> None:
             "sched_known": sched_known, "stops": stops}
         n_stops += len(stops)
 
+    edges = _edge_pairs(statisch, opslag, ts_floor, rows)
+
     built_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     size_t = _write_artifact("trains.json", {
         "v": 1, "built_at": built_at, "window_s": WINDOW_S, "cols": COLS, "rows": rows})
     size_d = _write_artifact("details.json", {
         "v": 1, "built_at": built_at, "window_s": WINDOW_S, "trains": details})
-    log.info("inspection: %d trains, %d detail stops, %d + %d bytes",
-             len(rows), n_stops, size_t, size_d)
+    size_e = _write_artifact("edges.json", {
+        "v": 1, "built_at": built_at, "window_s": WINDOW_S, "edges": edges})
+    log.info("inspection: %d trains, %d detail stops, %d edges, %d + %d + %d bytes",
+             len(rows), n_stops, len(edges), size_t, size_d, size_e)
+
+
+def _edge_pairs(statisch, opslag, ts_floor, rows) -> dict[str, list[list[int]]]:
+    """Per drawn edge the trains that passed it: [row_index, last_delta_s, last_ts],
+    sorted by delta descending. Deltas are *incurred* delay per passage (seg_obs) —
+    the numbers behind the map colour, unlike the absolute delays in trains.json.
+
+    seg_obs has no service_date; a trip_id seen on two service days within the
+    window is attributed to the row whose observation span is nearest to the
+    passage timestamp."""
+    row_index: dict[tuple[str, str], list[int]] = {}
+    for i, row in enumerate(rows):
+        row_index.setdefault((row[COUNTRY_I], row[TRIP_I]), []).append(i)
+    per_pair: dict[tuple[str, str, str], tuple[int, int]] = {}
+    for land, segment, trip_id, delta_s, ts in opslag.db.execute(
+            """SELECT land, segment, trip_id, delta_s, max(ts)
+               FROM seg_obs WHERE ts >= ? GROUP BY land, segment, trip_id""",
+            (ts_floor,)):
+        for rand in statisch.randen(segment):
+            cur = per_pair.get((rand, land, trip_id))
+            if cur is None or ts > cur[1]:
+                per_pair[(rand, land, trip_id)] = (delta_s, ts)
+
+    def span_distance(i: int, ts: int) -> int:
+        first_ts, last_ts = rows[i][FIRST_TS_I], rows[i][LAST_TS_I]
+        return 0 if first_ts <= ts <= last_ts else min(abs(ts - first_ts), abs(ts - last_ts))
+
+    edges: dict[str, list[list[int]]] = {}
+    for (rand, land, trip_id), (delta_s, ts) in per_pair.items():
+        candidates = row_index.get((land, trip_id))
+        if not candidates:  # deltas without any stop observation in the window
+            continue
+        idx = min(candidates, key=lambda i: span_distance(i, ts))
+        edges.setdefault(rand, []).append([idx, delta_s, ts])
+    for pairs in edges.values():
+        pairs.sort(key=lambda p: -p[1])
+    return edges
 
 
 def _detail_stops(statisch, meta, per_cluster, by_ts) -> list[list]:

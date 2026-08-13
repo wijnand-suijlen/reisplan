@@ -45,7 +45,8 @@ properties `van`/`naar` (stationsnamen), geometrie een LineString (v1: rechte li
   `wacht` (aan maar nog geen geslaagde poll), `uit` (bron uitgeschakeld, key ontbreekt),
   `geen-bron` (land heeft geen bruikbare feed).
 - `seg`-tuple: `[segment_id, kleurklasse, p90_delta_s, n_treinen]` over een venster van
-  30 minuten. Kleurklasse: **0 groen (p90 < 60 s — minder dan een minuut telt niet als
+  30 minuten. De p90 telt per *passage/bijstelling*, `n_treinen` per unieke trip —
+  rekenmethode, weging en bias: `p90-rekenmethode.md`. Kleurklasse: **0 groen (p90 < 60 s — minder dan een minuut telt niet als
   vertraging), 1 geel (≤ 120 s), 2 oranje (≤ 600 s), 3 rood (> 600 s)** — dit is
   *opgelopen* vertraging op het segment (delta), niet absolute vertraging. Segmenten
   zonder waarnemingen ontbreken; de client rendert die grijs ("geen data") — eerlijker

@@ -19,7 +19,9 @@ ruim een uur.
 van de *opgelopen* vertraging per baanvak (`seg_obs`, delta per segmentpassage,
 venster 30 min); deze artefacten tonen *absolute* vertraging per trein
 (`stop_obs2`). Een trein met 40 min absolute vertraging die constant 40 min
-achter rijdt, loopt niets meer op en kleurt het baanvak dus niet rood.
+achter rijdt, loopt niets meer op en kleurt het baanvak dus niet rood. De
+volledige uitleg — passages vs. treinen, weging, bias — staat in
+`p90-rekenmethode.md`.
 
 ## inspect/trains.json
 

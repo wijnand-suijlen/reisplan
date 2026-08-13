@@ -1,7 +1,8 @@
 "use strict";
 /* Inspectiepagina: ruwe per-trein-data uit inspect/trains.json + inspect/details.json.
-   Eén 24-uursartefact; de vensters (30 min/4 u/24 u) worden hier client-side
-   gefilterd op last_ts. Contract: docs/inspectie-schema.md. */
+   Eén 4-uursartefact (24 u paste niet in het servergeheugen); de vensters
+   (30 min/4 u) worden hier client-side gefilterd op last_ts.
+   Contract: docs/inspectie-schema.md. */
 
 const R2_BASE = "https://pub-2369cd93470e40528dc3aab9ab7fd5e7.r2.dev/";
 const PARAMS = new URLSearchParams(location.search);
@@ -84,7 +85,7 @@ function updateFreshness() {
   // dan lopen de vensters leeg (30 min als eerste)
   const stale = ageMin > 10;
   el("freshness").textContent =
-    `${allTrains.length} treinen (24 u) · gegevens ${ageMin} min oud` +
+    `${allTrains.length} treinen (4 u) · gegevens ${ageMin} min oud` +
     (stale ? " ⚠ verouderd — draait de aggregator?" : "");
   el("freshness").classList.toggle("stale", stale);
 }

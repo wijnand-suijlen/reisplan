@@ -5,13 +5,15 @@ en de inspectiepagina (`web/vertragingskaart/inspectie.html`). Doel: de ruwe
 per-trein-data achter de vertragingskaart inzichtelijk maken om ogenschijnlijke
 tegenstrijdigheden op de kaart te kunnen herleiden.
 
-Elke **300 s** bouwt de aggregator uit de laatste **24 uur** observaties drie
+Elke **300 s** bouwt de aggregator uit de laatste **4 uur** observaties drie
 artefacten en uploadt ze naar R2 onder `inspect/` (gzip, `Cache-Control:
 max-age=60`); lokaal staan kopieën in `web/vertragingskaart/data/inspect/`.
 `trains.json` en `details.json` komen uit `stop_obs2` (observatielog, absolute
 vertraging per stationscluster), `edges.json` uit `seg_obs` (opgelopen delta
-per baanvak-passage). De pagina filtert de vensters (30 min / 4 u / 24 u) zelf
-op `last_ts`, dus één 24-uursartefact bedient alle drie.
+per baanvak-passage). De pagina filtert de vensters (30 min / 4 u) zelf op
+`last_ts`, dus één 4-uursartefact bedient beide. Het venster was eerst 24 uur;
+dat paste qua geheugen niet op de e2-micro (1 GB) en dreef de buildtijd naar
+ruim een uur.
 
 **Let op bij het duiden van "tegenstrijdigheden"**: de kaart kleurt op de p90
 van de *opgelopen* vertraging per baanvak (`seg_obs`, delta per segmentpassage,
@@ -28,7 +30,7 @@ service_date):
 {
   "v": 1,
   "built_at": "2026-08-13T07:35:00Z",
-  "window_s": 86400,
+  "window_s": 14400,
   "cols": ["country", "trip_id", "service_date", "train_number", "route",
            "origin", "destination", "sched_dep", "sched_arr",
            "delay_s", "last_stop", "first_ts", "last_ts", "n_obs", "sched_known"],
@@ -72,7 +74,7 @@ Sleutel: `"<country>|<trip_id>|<service_date>"` (trip_ids bevatten geen `|`).
 
 ```json
 {
-  "v": 1, "built_at": "2026-08-13T07:35:00Z", "window_s": 86400,
+  "v": 1, "built_at": "2026-08-13T07:35:00Z", "window_s": 14400,
   "trains": {
     "nl|366476450|20260811": {
       "sched_known": true,
@@ -104,7 +106,7 @@ reden:
 
 ```json
 {
-  "v": 1, "built_at": "2026-08-13T07:35:00Z", "window_s": 86400,
+  "v": 1, "built_at": "2026-08-13T07:35:00Z", "window_s": 14400,
   "edges": {
     "E1025057532-4335755650": [[412, 180, 1786514301], [87, 0, 1786514100]]
   }

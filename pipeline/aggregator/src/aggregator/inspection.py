@@ -1,19 +1,21 @@
 """Inspection artifacts: per-train table and full-service details.
 
 Feeds the inspectie.html page next to the delay map. Every BUILD_INTERVAL_S the
-last 24h of stop_obs2 is aggregated into two static artifacts (contract:
+last 4h of stop_obs2 is aggregated into three static artifacts (contract:
 docs/inspectie-schema.md):
 
 - inspect/trains.json   one row per (country, trip_id, service_date)
 - inspect/details.json  scheduled stops + observed delays per train
 - inspect/edges.json    per drawn edge the trains that passed it (seg_obs deltas)
 
-The client filters the 30min/4h/24h windows itself on last_ts, so one 24h
-artifact serves all windows. Schedule metadata comes from merged.duckdb through
-the existing read-only Statisch connection. stop_obs2.trip_id is the raw RT id
-while merged trip_ids are feed-prefixed ("nl:123"), hence the explicit prefix in
-the join. DE trip_ids are IRIS labels ("ICE 228") that never match GTFS; those
-trains get sched_known=false and their observed stops in ts order.
+The client filters the 30min/4h windows itself on last_ts, so one 4h artifact
+serves both. The window was 24h once; a full day of all-country data made the
+build's working set far exceed the 1 GB VM and every build thrashed swap for
+over an hour. Schedule metadata comes from merged.duckdb through the existing
+read-only Statisch connection. stop_obs2.trip_id is the raw RT id while merged
+trip_ids are feed-prefixed ("nl:123"), hence the explicit prefix in the join.
+DE trip_ids are IRIS labels ("ICE 228") that never match GTFS; those trains get
+sched_known=false and their observed stops in ts order.
 """
 
 import json
@@ -29,7 +31,7 @@ from .config import WEB_DATA, bronnen
 log = logging.getLogger("aggregator")
 
 BUILD_INTERVAL_S = 300
-WINDOW_S = 86400
+WINDOW_S = 4 * 3600
 SERVICE_DATE_DAYS_BACK = 2  # date floor keeps overnight trains with yesterday's service_date
 META_CACHE_MAX = 20_000
 
@@ -135,31 +137,43 @@ def _edge_pairs(statisch, opslag, ts_floor, rows) -> dict[str, list[list[int]]]:
 
     seg_obs has no service_date; a trip_id seen on two service days within the
     window is attributed to the row whose observation span is nearest to the
-    passage timestamp."""
+    passage timestamp.
+
+    The (edge, trip) reduction runs inside SQLite via a temp segment->edge
+    mapping table; doing it in Python held a dict with one tuple key per
+    (edge, country, trip) — hundreds of thousands of entries — which pushed the
+    1 GB VM into swap. The bare delta_s next to max(ts) is SQLite's
+    latest-row-wins semantics, same as the stop_obs2 query above."""
     row_index: dict[tuple[str, str], list[int]] = {}
     for i, row in enumerate(rows):
         row_index.setdefault((row[COUNTRY_I], row[TRIP_I]), []).append(i)
-    per_pair: dict[tuple[str, str, str], tuple[int, int]] = {}
-    for land, segment, trip_id, delta_s, ts in opslag.db.execute(
-            """SELECT land, segment, trip_id, delta_s, max(ts)
-               FROM seg_obs WHERE ts >= ? GROUP BY land, segment, trip_id""",
-            (ts_floor,)):
-        for rand in statisch.randen(segment):
-            cur = per_pair.get((rand, land, trip_id))
-            if cur is None or ts > cur[1]:
-                per_pair[(rand, land, trip_id)] = (delta_s, ts)
 
     def span_distance(i: int, ts: int) -> int:
         first_ts, last_ts = rows[i][FIRST_TS_I], rows[i][LAST_TS_I]
         return 0 if first_ts <= ts <= last_ts else min(abs(ts - first_ts), abs(ts - last_ts))
 
+    db = opslag.db
+    with db:
+        db.execute("DROP TABLE IF EXISTS edge_map")
+        db.execute("CREATE TEMP TABLE edge_map (segment TEXT, rand TEXT)")
+        db.executemany(
+            "INSERT INTO edge_map VALUES (?, ?)",
+            [(seg, rand) for seg, randen in statisch.segment_randen.items()
+             for rand in randen])
+        db.execute("CREATE INDEX edge_map_segment ON edge_map (segment)")
     edges: dict[str, list[list[int]]] = {}
-    for (rand, land, trip_id), (delta_s, ts) in per_pair.items():
+    for rand, land, trip_id, delta_s, ts in db.execute(
+            """SELECT m.rand, s.land, s.trip_id, s.delta_s, max(s.ts)
+               FROM seg_obs s JOIN edge_map m ON m.segment = s.segment
+               WHERE s.ts >= ? GROUP BY m.rand, s.land, s.trip_id""",
+            (ts_floor,)):
         candidates = row_index.get((land, trip_id))
         if not candidates:  # deltas without any stop observation in the window
             continue
         idx = min(candidates, key=lambda i: span_distance(i, ts))
         edges.setdefault(rand, []).append([idx, delta_s, ts])
+    with db:
+        db.execute("DROP TABLE edge_map")
     for pairs in edges.values():
         pairs.sort(key=lambda p: -p[1])
     return edges
@@ -186,7 +200,10 @@ def _resolve_missing_meta(statisch, keys) -> None:
     if _feed_by_country is None:
         _feed_by_country = {cfg.land: cfg.feed_prefix for cfg in bronnen()}
     if len(_meta_cache) > META_CACHE_MAX:
-        _meta_cache.clear()
+        # evict only entries outside the current window: clearing everything made
+        # every build re-fetch all metadata once the window held > MAX trains
+        for stale in [k for k in _meta_cache if k not in keys]:
+            del _meta_cache[stale]
     todo: dict[str, dict[str, tuple[str, str]]] = {}  # feed -> prefixed id -> cache key
     for country, trip_id in keys:
         if (country, trip_id) in _meta_cache:

@@ -63,6 +63,18 @@ Besloten (2026-08-09):
 - **Reserveringstreinen**: volwaardig in de planning (met reserveringsvlag); boekingsprijs waar mogelijk als filter, op basis van een reisgezelschap (reizigers met leeftijd en kortingskaarten)
 - **Hosting**: free-tier (voorlopig: GitHub Actions voor ETL, Cloudflare R2/Workers voor distributie en proxy); eerst wordt de datapijplijn als fase-0-spike op de laptop geprototypet om de eisen te meten
 
+## Productieomgeving: krap geheugen
+
+De aggregator en de wekelijkse dataverversing draaien op een **GCP e2-micro met
+1 GB RAM** (plus 4 GB swap). Alles wat DuckDB zwaar gebruikt (merge, maak-segmenten,
+closure-baseline) moet daarom binnen `REISPLAN_DUCKDB_MEM=600MB` passen —
+`deploy/vernieuw.sh` zet die limiet. Valkuilen die hier al fout gingen:
+TEMP-tabellen zijn memory-only (gebruik een gewone, schijfgebackte tabel voor grote
+tussenresultaten) en één all-feeds-query kan zelfs mét spilling een te grote
+werkset hebben (verwerk per feed). **Test zware DuckDB-wijzigingen lokaal met
+`REISPLAN_DUCKDB_MEM=600MB`** vóór ze naar de VM gaan; op de laptop (geen limiet)
+blijven deze bugs anders onzichtbaar.
+
 Nog open (zie PLAN.md voor de uitwerking):
 
 - Definitieve databronnen per land (dienstregeling, realtime, materieel, tarieven)

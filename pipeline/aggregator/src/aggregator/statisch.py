@@ -112,9 +112,10 @@ class Statisch:
         listing its stops (blockade detection, PLAN.md verbeterpunt 7)."""
         key = (feed_prefix, rt_trip_id)
         if key not in self._trip_segments_cache:
+            # merged trip_ids zijn feed-geprefixt; RT geeft de kale id
             rows = self.con.execute(
                 "SELECT stop_id FROM stop_times WHERE feed = ? AND trip_id = ?"
-                " ORDER BY stop_sequence::INT", [feed_prefix, rt_trip_id]
+                " ORDER BY stop_sequence::INT", [feed_prefix, f"{feed_prefix}:{rt_trip_id}"]
             ).fetchall()
             clusters: list[str] = []
             for (stop_id,) in rows:

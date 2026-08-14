@@ -86,7 +86,7 @@ vier met 0.
 | Bron | `seg_obs` | `stop_obs2` | `seg_obs` via `edges.json` |
 | Grootheid | *opgelopen* delta per segmentpassage | *absolute* vertraging, jongste observatie | *opgelopen* delta, laatste passage |
 | Eenheid van telling | datapunt (passage/bijstelling) | trein | trein (laatste passage wint) |
-| Venster | vast 30 min | 30 min / 4 u, client-side op `last_ts` | idem, passage moet zelf in venster liggen |
+| Venster | vast 30 min | 30 min / 4 u, client-side op `last_ts` | 30 min / 4 u op de passage-ts (zelfde selectieregel als de kaart) |
 | Aggregatie | p90 over de hoop | geen (rij per trein); percentiel = rang binnen venster | geen |
 
 Daardoor kán een rand rood zijn terwijl de tabel vooral nullen toont (één

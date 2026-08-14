@@ -10,8 +10,10 @@ artefacten en uploadt ze naar R2 onder `inspect/` (gzip, `Cache-Control:
 max-age=60`); lokaal staan kopieën in `web/vertragingskaart/data/inspect/`.
 `trains.json` en `details.json` komen uit `stop_obs2` (observatielog, absolute
 vertraging per stationscluster), `edges.json` uit `seg_obs` (opgelopen delta
-per baanvak-passage). De pagina filtert de vensters (30 min / 4 u) zelf op
-`last_ts`, dus één 4-uursartefact bedient beide. Het venster was eerst 24 uur;
+per baanvak-passage). De pagina filtert de vensters (30 min / 4 u) zelf: zonder
+baanvakfilter op `last_ts`, mét baanvakfilter uitsluitend op de passage-ts uit
+`edges.json` — dezelfde selectieregel als de kaartkleur, zodat kaart en tabel
+dezelfde treinen tellen. Eén 4-uursartefact bedient beide vensters. Het venster was eerst 24 uur;
 dat paste qua geheugen niet op de e2-micro (1 GB) en dreef de buildtijd naar
 ruim een uur.
 

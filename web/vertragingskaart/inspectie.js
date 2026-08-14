@@ -92,17 +92,20 @@ function updateFreshness() {
 
 function visibleTrains() {
   const floor = Date.now() / 1000 - windowS;
-  let trains = allTrains.filter((t) => t.last_ts >= floor);
   if (EDGE_ID) {
     if (!edgePairs) return [];
-    trains = trains.filter((t) => {
+    // zelfde selectieregel als de kaartkleur: laatste passage over dít baanvak
+    // binnen het venster. "Laatst gezien" (last_ts) is hier alleen informatief —
+    // meefilteren zou stipte treinen laten wegvallen wier voorspellingen al
+    // langer ongewijzigd zijn dan het venster breed is.
+    return allTrains.filter((t) => {
       const pair = edgePairs.get(t._idx);
-      if (!pair || pair[1] < floor) return false; // passage moet zelf in het venster liggen
+      if (!pair || pair[1] < floor) return false;
       t.edge_delta = pair[0];
       return true;
     });
   }
-  return trains;
+  return allTrains.filter((t) => t.last_ts >= floor);
 }
 
 /* percentiel = inclusieve rang van de actuele vertraging binnen het venster */

@@ -43,6 +43,26 @@ opliepen. Datapunten: 6 × ~300 s en 4 × 0 s. De p90 van die tien waarden is
 met baanvakfilter toont diezelfde situatie als vijf treinen: één met +5 en
 vier met 0.
 
+## Tijdstempel = schrijfmoment, geen passagetijd
+
+Geen van de logboeken bevat de fysieke passagetijd: elke rij krijgt de klok
+van het moment waarop de aggregator hem wegschreef (`opslag.bewaar`). De
+GTFS-RT-feed zendt per poll de complete actuele toestand van alle trips van
+de dienstdag, zonder tijdstempel per gegeven; het enige dat een rij aan een
+echte gebeurtenis koppelt is de dedup-cache, die alleen *wijzigingen*
+doorlaat. Zolang die cache intact is, is "ts van de laatste wijziging" een
+goede benadering van het moment waarop iets gebeurde — en die cache is
+daarmee dragend voor álle tijdgefilterde weergaven.
+
+Toen de cache nog verloren kon gaan (leeg bij een herstart, volledig gewist
+bij overflow) herlogde de eerstvolgende poll de hele dagvoorraad van de feed
+met ts=nu: phantom-observaties die overal de echte tijden overschaduwden
+(max-ts wint) — allang gearriveerde ochtendtreinen doken 's avonds op in de
+baanvak-weergave én in het 30-minutenvenster van de kaartkleur. Sinds
+2026-08-14 wordt de cache bij het opstarten uit de database gewarmd en
+selectief gepruned in plaats van gewist (alleen sleutels die de feed niet
+meer kán sturen), en zijn de historische phantom-rijen opgeruimd.
+
 ## Waarom zo?
 
 - **Goedkoop en simpel.** Eén tabel-scan met venster op de ts-index en wat
@@ -67,8 +87,11 @@ vier met 0.
 - **Alleen wijzigingen worden gelogd.** Een trein die na zijn eerste
   waarneming stabiel blijft (op tijd óf constant te laat) produceert geen
   nieuwe punten; treinen waarvan de schatting beweegt zijn dus
-  oververtegenwoordigd. Dit is dezelfde eigenschap waardoor stabiele treinen
-  uit korte vensters op de inspectiepagina vallen.
+  oververtegenwoordigd. Door dezelfde eigenschap vallen stabiele treinen uit
+  korte vensters van de *ongefilterde* inspectielijst ("laatst gezien" =
+  laatste wijziging). De baanvak-weergave heeft er nauwelijks last van: de
+  eerste passage van een segment wordt altijd gelogd, dus de passage-ts
+  waarop die filtert is wél betrouwbaar.
 - **Bijstellingen tellen dubbel.** Een voorspelling die 0 → 60 → 120 gaat
   levert drie punten voor dezelfde fysieke passage.
 - **Kleine n maakt p90 ≈ max.** Bij minder dan ~10 punten wijst
@@ -89,10 +112,15 @@ vier met 0.
 | Venster | vast 30 min | 30 min / 4 u, client-side op `last_ts` | 30 min / 4 u op de passage-ts (zelfde selectieregel als de kaart) |
 | Aggregatie | p90 over de hoop | geen (rij per trein); percentiel = rang binnen venster | geen |
 
-Daardoor kán een rand rood zijn terwijl de tabel vooral nullen toont (één
-lange oploper tussen korte stipte treinen), of andersom groen terwijl de
-tabel hoge absolute vertragingen laat zien (iedereen rijdt constant 20 min
-achter maar loopt niets meer op).
+Sinds 2026-08-14 hanteert de baanvak-gefilterde pagina dezelfde *selectie*
+als de kaart — een trein telt mee als zijn laatste passage over dít baanvak
+in het venster ligt — zodat kaart en tabel dezelfde treinen zien (op de
+verschillende bouwmomenten na: het snapshot is elke 60 s vers, de artefacten
+elke 300 s). De *weging* blijft verschillend: de kaart p90't over passages,
+de tabel toont één rij per trein. Daardoor kán een rand nog steeds rood zijn
+terwijl de tabel vooral nullen toont (één lange oploper tussen korte stipte
+treinen), of andersom groen terwijl de tabel hoge absolute vertragingen laat
+zien (iedereen rijdt constant 20 min achter maar loopt niets meer op).
 
 ## Mogelijke verbeterpunten
 

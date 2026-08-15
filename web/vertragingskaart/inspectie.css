@@ -47,6 +47,7 @@ tbody tr.selected { background: #e8eefb; }
 td .sub, .sub { color: #6d6d68; }
 td.delay-neg { color: #2456c9; }
 td.delay-high { color: #d03b3b; font-weight: 600; }
+td.cancel, .cancel { color: #d03b3b; font-weight: 600; }
 #empty-note { padding: 24px; color: #6d6d68; }
 
 aside {
@@ -55,6 +56,13 @@ aside {
 }
 aside section { padding: 12px 14px; }
 aside h2 { font-size: 13px; margin-bottom: 8px; }
+#map-status-pane { border-bottom: 1px solid #d8d8d4; }
+#map-status div { margin-bottom: 5px; }
+#map-status .hint { color: #6d6d68; }
+#map-status .dot {
+  display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  margin-right: 6px; vertical-align: baseline;
+}
 #histogram-pane { border-bottom: 1px solid #d8d8d4; }
 #histogram { width: 100%; height: auto; display: block; }
 #histogram .count { font: 10px system-ui, sans-serif; fill: #6d6d68; text-anchor: middle; }

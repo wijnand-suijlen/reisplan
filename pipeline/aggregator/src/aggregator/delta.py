@@ -70,16 +70,17 @@ def _event_time(stu) -> int | None:
 def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
     """Returns (seg_obs, stop_obs, cancels, passages).
 
-    cancels: (fine segment, trip) pairs for cancelled trips and skipped-stop stretches;
-    passages: fine segments with a *realized* passage (event time in the past, or no
-    time given — most feeds only carry near-term updates). Both feed the blockade
-    tracker; a passage is what clears a blockade.
+    cancels: (fine segment, trip, service_date) triples for cancelled trips and
+    skipped-stop stretches; passages: fine segments with a *realized* passage (event
+    time in the past, or no time given — most feeds only carry near-term updates).
+    Both feed the blockade tracker; a passage is what clears a blockade. Cancels are
+    also persisted (opslag.bewaar_cancels) so the inspection page can show them.
     """
     feed = parse_feed(pb_bytes)
     nu = time.time()
     seg_obs: list[SegObs] = []
     stop_obs: list[StopObs] = []
-    cancels: list[tuple[str, str]] = []
+    cancels: list[tuple[str, str, str]] = []
     passages: list[str] = []
     vandaag = time.strftime("%Y%m%d", time.gmtime())
     for ent in feed.entity:
@@ -91,7 +92,7 @@ def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
         if tu.trip.schedule_relationship == tu.trip.CANCELED:
             # cancelled trips usually come without stop list -> static route lookup
             for fijn in statisch.trip_segments(feed_prefix, trip_id):
-                cancels.append((fijn, trip_id))
+                cancels.append((fijn, trip_id, service_date))
             continue
         expliciet = []  # (cluster, delay, event_time)
         vorige_geskipt: str | None = None
@@ -102,7 +103,7 @@ def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
             if stu.schedule_relationship == stu.SKIPPED:
                 if vorige_geskipt and vorige_geskipt != cluster:
                     for fijn, _ in statisch.verfijn(segment_id(vorige_geskipt, cluster)):
-                        cancels.append((fijn, trip_id))
+                        cancels.append((fijn, trip_id, service_date))
                 vorige_geskipt = cluster
                 continue
             vorige_geskipt = None

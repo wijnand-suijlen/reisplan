@@ -41,6 +41,7 @@ let selectedKey = null;
 let details = null;          // { fetchedAt, trains }
 let detailsPromise = null;
 let edgePairs = null;        // rij-index -> [delta_s, ts] voor EDGE_ID (uit edges.json)
+let edgeCancels = null;      // rij-index -> ts van uitvalmeldingen op EDGE_ID
 let edgeRetried = false;
 
 function trainKey(t) { return `${t.country}|${t.trip_id}|${t.service_date}`; }
@@ -74,6 +75,7 @@ async function fetchTrains() {
     }
     edgeRetried = false;
     edgePairs = new Map((edgesPayload.edges[EDGE_ID] || []).map(([i, d, ts]) => [i, [d, ts]]));
+    edgeCancels = new Map(((edgesPayload.cancels || {})[EDGE_ID] || []).map(([i, ts]) => [i, ts]));
   }
   render();
 }
@@ -97,21 +99,26 @@ function visibleTrains() {
     // zelfde selectieregel als de kaartkleur: laatste passage over dít baanvak
     // binnen het venster. "Laatst gezien" (last_ts) is hier alleen informatief —
     // meefilteren zou stipte treinen laten wegvallen wier voorspellingen al
-    // langer ongewijzigd zijn dan het venster breed is.
+    // langer ongewijzigd zijn dan het venster breed is. Uitvalmeldingen op dit
+    // baanvak (grondstof van de versperd-markering) tellen apart mee.
     return allTrains.filter((t) => {
       const pair = edgePairs.get(t._idx);
-      if (!pair || pair[1] < floor) return false;
-      t.edge_delta = pair[0];
-      return true;
+      const cancelTs = edgeCancels ? edgeCancels.get(t._idx) : undefined;
+      t.edge_delta = pair && pair[1] >= floor ? pair[0] : null;
+      t.edge_cancel_ts = cancelTs !== undefined && cancelTs >= floor ? cancelTs : null;
+      return t.edge_delta !== null || t.edge_cancel_ts !== null;
     });
   }
   return allTrains.filter((t) => t.last_ts >= floor);
 }
 
-/* percentiel = inclusieve rang van de actuele vertraging binnen het venster */
+/* percentiel = inclusieve rang van de actuele vertraging binnen het venster;
+   opgeheven treinen zonder vertragingswaarneming (delay_s null) doen niet mee */
 function assignPercentiles(trains) {
-  const sorted = trains.map((t) => t.delay_s).sort((a, b) => a - b);
+  const withDelay = trains.filter((t) => t.delay_s !== null);
+  const sorted = withDelay.map((t) => t.delay_s).sort((a, b) => a - b);
   for (const t of trains) {
+    if (t.delay_s === null || !sorted.length) { t.percentile = null; continue; }
     let lo = 0, hi = sorted.length;      // bovengrens: aantal <= delay_s
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
@@ -129,10 +136,15 @@ function formatLastSeen(t) {
   return `${day}${time}`;
 }
 
-function delayCell(delayS) {
+function delayCell(delayS, cancelled) {
+  if (delayS === null || delayS === undefined) {
+    return `<td class="num cancel" title="als opgeheven gemeld — geen rijdende waarneming">✕</td>`;
+  }
   const min = Math.round(delayS / 60);
   const cls = min < 0 ? " delay-neg" : min >= 10 ? " delay-high" : "";
-  return `<td class="num${cls}">${min > 0 ? "+" : ""}${min}</td>`;
+  const mark = cancelled
+    ? ` <span class="cancel" title="daarnaast (deels) als opgeheven gemeld">✕</span>` : "";
+  return `<td class="num${cls}">${min > 0 ? "+" : ""}${min}${mark}</td>`;
 }
 
 function renderTable(trains) {
@@ -152,14 +164,15 @@ function renderTable(trains) {
     return `<tr data-key="${esc(key)}"${sel}>` +
       `<td>${esc(t.country)}</td>` +
       `<td class="clip" title="${esc(t.train_number)}">${number}</td>` +
-      `<td class="clip" title="${esc(t.origin)}">${esc(t.origin)}${schedNote}</td>` +
-      `<td class="clip" title="${esc(t.destination)}">${esc(t.destination)}</td>` +
+      `<td class="clip" title="${esc(t.origin)}">${esc(t.origin ?? "?")}${schedNote}</td>` +
+      `<td class="clip" title="${esc(t.destination)}">${esc(t.destination ?? "?")}</td>` +
       `<td>${esc((t.sched_dep || "–").slice(0, 5))}</td>` +
-      delayCell(t.delay_s) +
-      (EDGE_ID ? delayCell(t.edge_delta).replace("<td class=\"num", "<td class=\"num edge-only") : "") +
-      `<td class="num">p${t.percentile}</td>` +
+      delayCell(t.delay_s, t.cancelled) +
+      (EDGE_ID ? delayCell(t.edge_delta, t.edge_cancel_ts !== null)
+        .replace("<td class=\"num", "<td class=\"num edge-only") : "") +
+      `<td class="num">${t.percentile === null ? "–" : "p" + t.percentile}</td>` +
       `<td class="clip-sm" title="${esc(t.last_stop)}">${formatLastSeen(t)}` +
-      ` <span class="sub">${esc(t.last_stop)}</span></td>` +
+      ` <span class="sub">${esc(t.last_stop ?? "")}</span></td>` +
       `<td class="num">${t.n_obs}</td></tr>`;
   }).join("");
   el("empty-note").hidden = sorted.length > 0;
@@ -169,7 +182,9 @@ function renderTable(trains) {
   }
 }
 
-function renderHistogram(trains) {
+function renderHistogram(all) {
+  const trains = all.filter((t) => t.delay_s !== null);
+  const nCancelled = all.filter((t) => t.cancelled).length;
   const counts = BINS.map(() => 0);
   for (const t of trains) {
     const min = t.delay_s / 60;
@@ -195,7 +210,8 @@ function renderHistogram(trains) {
       `<text x="${cx}" y="${H - bottom + 12}" class="bin">${esc(BINS[b][0])}</text></g>`);
   });
   el("histogram").innerHTML = parts.join("");
-  el("histogram-n").textContent = `· ${trains.length} treinen`;
+  el("histogram-n").textContent = `· ${trains.length} treinen` +
+    (nCancelled ? ` · ✕ ${nCancelled} met uitvalmelding` : "");
 }
 
 async function fetchDetails() {
@@ -244,6 +260,66 @@ async function renderDetail() {
     rows + "</tbody></table>";
 }
 
+/* Kaartstatus van het gekozen baanvak: hetzelfde snapshot.json als de kaart
+   (kleur, versperd, actieve werkzaamheden) + de baseline-blokken uit works.json.
+   Zo staat naast de ruwe treindata precies wat de kaart er nú van maakt. */
+const WERK_LABEL = { // labels als op de kaart (app.js)
+  closed: "🚧 werkzaamheden — gepland buiten dienst",
+  reduced: "🚧 werkzaamheden — aangepaste dienst",
+  intl: "🌍 internationale verbinding gestremd",
+};
+
+function fmtBlok(d, h0, h1) {
+  const dag = `${d.slice(6, 8)}-${d.slice(4, 6)}`;
+  return `${dag} ${String(h0).padStart(2, "0")}–${String(h1 + 1).padStart(2, "0")} u`;
+}
+
+async function fetchMapStatus() {
+  const pane = el("map-status");
+  let snap, works;
+  try {
+    const resps = await Promise.all([
+      fetch(`${DATA_BASE}snapshot.json?t=${Date.now()}`),
+      fetch(`${DATA_BASE}inspect/works.json?t=${Date.now()}`),
+    ]);
+    snap = await resps[0].json();
+    works = resps[1].ok ? await resps[1].json() : { edges: {} };
+  } catch (e) {
+    pane.innerHTML = "<span class=\"hint\">kaartstatus niet bereikbaar</span>";
+    return;
+  }
+  const parts = [];
+  const seg = (snap.seg || []).find(([id]) => id === EDGE_ID);
+  if (seg) {
+    const [, k, p90, n] = seg;
+    parts.push(`<div><span class="dot" style="background:${SEVERITY_COLORS[k]}"></span>` +
+      `kleurklasse ${k} · p90 opgelopen ${Math.round(p90 / 60)} min · ` +
+      `${n} trein(en), 30 min</div>`);
+  } else {
+    parts.push("<div><span class=\"dot\" style=\"background:#9a9a97\"></span>" +
+      "geen kleurwaarneming (grijs op de kaart)</div>");
+  }
+  if ((snap.blk || []).includes(EDGE_ID)) {
+    parts.push("<div>🚫 <b>versperd</b> — ≥2 treinen binnen 90 min als opgeheven " +
+      "gemeld, geen waargenomen passage sindsdien</div>");
+  }
+  for (const [src, sev, until, txt, randen] of snap.wrk || []) {
+    if (!randen.includes(EDGE_ID)) continue;
+    const extra = [until && `tot ${until}`, txt, `bron: ${src}`].filter(Boolean).join(" · ");
+    parts.push(`<div>${WERK_LABEL[sev] || WERK_LABEL.reduced}` +
+      `<br><span class="sub">${esc(extra)}</span></div>`);
+  }
+  const blokken = (works.edges || {})[EDGE_ID] || [];
+  if (blokken.length) {
+    const toon = blokken.slice(0, 8).map(([d, h0, h1]) => fmtBlok(d, h0, h1)).join(", ");
+    parts.push(`<div>📅 geplande buitendienststelling (baseline: 0 geplande treinen): ` +
+      `<span class="sub">${esc(toon)}${blokken.length > 8 ? ` +${blokken.length - 8} meer` : ""}</span></div>`);
+  }
+  const leeftijd = Math.max(0, Math.round((Date.now() - Date.parse(snap.t)) / 1000));
+  parts.push(`<div class="sub">snapshot ${leeftijd}s oud</div>`);
+  pane.innerHTML = parts.join("");
+}
+
 function render() {
   const trains = visibleTrains();
   assignPercentiles(trains);
@@ -287,7 +363,11 @@ if (EDGE_ID) {
   chip.hidden = false;
   chip.innerHTML = `baanvak <b>${esc(EDGE_LABEL || EDGE_ID)}</b> ` +
     `<a href="inspectie.html${clear.toString() ? "?" + clear : ""}">filter wissen</a>`;
-  el("empty-note").textContent = "geen passages op dit baanvak in dit venster";
+  el("empty-note").textContent =
+    "geen passages of uitvalmeldingen op dit baanvak in dit venster";
+  el("map-status-pane").hidden = false;
+  fetchMapStatus();
+  setInterval(fetchMapStatus, REFRESH_MS);
 }
 
 fetchTrains();

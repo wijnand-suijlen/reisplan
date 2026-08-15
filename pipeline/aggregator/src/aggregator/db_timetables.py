@@ -73,6 +73,7 @@ class _StopState:
     delay_s: int
     event_ts: int
     seen: float
+    service_date: str = ""
     cancelled: bool = False
 
 
@@ -187,7 +188,7 @@ class DbTimetablesSource:
         if not cancelled:
             out["stops"].append(StopObs(trip_ref, cluster, delay, service_date))
         self.trip_state.setdefault(head, {})[idx] = _StopState(
-            cluster, delay, event_ts, now, cancelled)
+            cluster, delay, event_ts, now, service_date, cancelled)
         self._emit_deltas(head, idx, statisch, now, out)
 
     def _process_station(self, eva: str, now: float, statisch: Statisch, out: dict):
@@ -322,7 +323,9 @@ class DbTimetablesSource:
                 continue
             fine_segments = self._expand_pair(head, s_from.cluster, s_to.cluster, statisch)
             if s_from.cancelled and s_to.cancelled:
-                out["cancels"] += [(fine, trip_ref) for fine, _ in fine_segments]
+                service_date = s_from.service_date or s_to.service_date
+                out["cancels"] += [(fine, trip_ref, service_date)
+                                   for fine, _ in fine_segments]
                 continue
             if s_from.cancelled or s_to.cancelled:
                 continue
@@ -373,6 +376,7 @@ class DbTimetablesSource:
                 heapq.heappush(self.queue, (now + interval, eva))
             if handled:
                 changed = opslag.bewaar(self.cfg.land, out["segs"], out["stops"])
+                opslag.bewaar_cancels(self.cfg.land, out["cancels"])
                 blokkades.note_cancels(out["cancels"], now)
                 blokkades.note_passages(out["passages"], now)
                 self.laatste_ok = now

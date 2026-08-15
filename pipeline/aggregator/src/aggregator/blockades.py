@@ -16,8 +16,10 @@ class BlockadeTracker:
     def __init__(self) -> None:
         self._cancels: dict[str, dict[str, float]] = {}  # segment -> trip -> last seen
 
-    def note_cancels(self, items: list[tuple[str, str]], now: float) -> None:
-        for segment, trip in items:
+    def note_cancels(self, items: list[tuple[str, str, str]], now: float) -> None:
+        """items: (segment, trip, service_date); the date only matters for the
+        persisted cancel log (opslag), the blockade signal ignores it."""
+        for segment, trip, _service_date in items:
             self._cancels.setdefault(segment, {})[trip] = now
 
     def note_passages(self, segments: list[str], now: float) -> None:

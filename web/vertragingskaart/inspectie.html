@@ -31,7 +31,7 @@
             <th data-key="sched_dep">Vertrek</th>
             <th data-key="delay_s" class="num" title="actuele vertraging in minuten">Vertr. (min)</th>
             <th data-key="edge_delta" class="num edge-only"
-                title="opgelopen vertraging op dit baanvak, laatste passage in het venster">Δ baanvak</th>
+                title="opgelopen vertraging op dit baanvak, laatste passage in het venster; ✕ = op dit baanvak als opgeheven gemeld">Δ baanvak</th>
             <th data-key="percentile" class="num" title="percentiel binnen het venster">Pctl</th>
             <th data-key="last_ts">Laatst gezien</th>
             <th data-key="n_obs" class="num"
@@ -44,6 +44,10 @@
     </section>
 
     <aside>
+      <section id="map-status-pane" hidden>
+        <h2>Kaartstatus baanvak</h2>
+        <div id="map-status"><span class="hint">laden…</span></div>
+      </section>
       <section id="histogram-pane">
         <h2>Punctualiteit <span id="histogram-n"></span></h2>
         <svg id="histogram" viewBox="0 0 320 170" role="img"
@@ -63,7 +67,9 @@
     alleen <em>wijzigingen</em> worden gelogd: een trein zonder recente vertragingswijziging
     valt uit korte vensters ·
     de kaart kleurt op <em>opgelopen</em> vertraging per baanvak; deze tabel toont
-    <em>absolute</em> vertraging per trein
+    <em>absolute</em> vertraging per trein ·
+    ✕ = als (deels) opgeheven gemeld; per melding wordt alleen de <em>eerste</em>
+    waarneming gelogd
   </footer>
 
   <script src="inspectie.js"></script>

@@ -4,9 +4,13 @@ Feeds the inspectie.html page next to the delay map. Every BUILD_INTERVAL_S the
 last 4h of stop_obs2 is aggregated into three static artifacts (contract:
 docs/inspectie-schema.md):
 
-- inspect/trains.json   one row per (country, trip_id, service_date)
+- inspect/trains.json   one row per (country, trip_id, service_date), incl. trains
+                        seen only as cancelled (cancel_obs; delay_s/last_stop null)
 - inspect/details.json  scheduled stops + observed delays per train
 - inspect/edges.json    per drawn edge the trains that passed it (seg_obs deltas)
+                        and the trains reported cancelled over it (cancel_obs)
+- inspect/works.json    planned baseline closures per drawn edge (planned_closures
+                        table from the weekly ETL; static per aggregator run)
 
 The client filters the 30min/4h windows itself on last_ts, so one 4h artifact
 serves both. The window was 24h once; a full day of all-country data made the
@@ -25,6 +29,8 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+import duckdb
+
 from . import r2
 from .config import WEB_DATA, bronnen
 
@@ -37,8 +43,10 @@ META_CACHE_MAX = 20_000
 
 COLS = ["country", "trip_id", "service_date", "train_number", "route",
         "origin", "destination", "sched_dep", "sched_arr",
-        "delay_s", "last_stop", "first_ts", "last_ts", "n_obs", "sched_known"]
-COUNTRY_I, TRIP_I = COLS.index("country"), COLS.index("trip_id")
+        "delay_s", "last_stop", "first_ts", "last_ts", "n_obs", "sched_known",
+        "cancelled"]
+COUNTRY_I, TRIP_I, DATE_I = (COLS.index("country"), COLS.index("trip_id"),
+                             COLS.index("service_date"))
 FIRST_TS_I, LAST_TS_I = COLS.index("first_ts"), COLS.index("last_ts")
 
 _next_build = 0.0
@@ -86,38 +94,58 @@ def _build(statisch, opslag) -> None:
                GROUP BY country, trip_id, service_date, cluster""",
             (date_floor, ts_floor)):
         observed.setdefault((country, trip_id, service_date), {})[cluster] = (delay_s, ts)
+    cancel_stats = {
+        (country, trip_id, service_date): (first_ts, last_ts, n)
+        for country, trip_id, service_date, first_ts, last_ts, n in opslag.db.execute(
+            """SELECT country, trip_id, service_date, min(ts), max(ts), count(*)
+               FROM cancel_obs WHERE service_date >= ? AND ts >= ?
+               GROUP BY country, trip_id, service_date""",
+            (date_floor, ts_floor))
+    }
 
-    _resolve_missing_meta(statisch, {(c, t) for c, t, _ in observed})
+    all_keys = sorted(set(observed) | set(cancel_stats))
+    _resolve_missing_meta(statisch, {(c, t) for c, t, _ in all_keys})
 
     rows = []
     details = {}
     n_stops = 0
-    for key, per_cluster in sorted(observed.items()):
+    for key in all_keys:
         country, trip_id, service_date = key
-        first_ts, n_obs = train_stats[key]
-        last_cluster, (delay_s, last_ts) = max(per_cluster.items(), key=lambda kv: kv[1][1])
+        per_cluster = observed.get(key, {})
+        cancel = cancel_stats.get(key)
         by_ts = sorted(per_cluster.items(), key=lambda kv: kv[1][1])
+        if per_cluster:
+            first_ts, n_obs = train_stats[key]
+            last_cluster, (delay_s, last_ts) = max(per_cluster.items(),
+                                                   key=lambda kv: kv[1][1])
+            last_stop = _cluster_name(statisch, last_cluster)
+        else:  # seen only as cancelled: no delay to show, window bounds from cancels
+            first_ts, n_obs = cancel[0], 0
+            delay_s, last_ts, last_stop = None, cancel[1], None
+        if cancel:
+            first_ts = min(first_ts, cancel[0])
+            last_ts = max(last_ts, cancel[1])
         meta = _meta_cache.get((country, trip_id))
         sched_known = bool(meta and meta.stops)
         if sched_known:
             origin, destination = meta.stops[0][1], meta.stops[-1][1]
             sched_dep, sched_arr = meta.stops[0][3], meta.stops[-1][2]
         else:
-            origin = _cluster_name(statisch, by_ts[0][0])
-            destination = _cluster_name(statisch, by_ts[-1][0])
+            origin = _cluster_name(statisch, by_ts[0][0]) if by_ts else None
+            destination = _cluster_name(statisch, by_ts[-1][0]) if by_ts else None
             sched_dep = sched_arr = None
         rows.append([country, trip_id, service_date,
                      meta.train_number if meta else trip_id,
                      meta.route if meta else None,
                      origin, destination, sched_dep, sched_arr,
-                     delay_s, _cluster_name(statisch, last_cluster),
-                     first_ts, last_ts, n_obs, sched_known])
+                     delay_s, last_stop,
+                     first_ts, last_ts, n_obs, sched_known, bool(cancel)])
         stops = _detail_stops(statisch, meta if sched_known else None, per_cluster, by_ts)
         details[f"{country}|{trip_id}|{service_date}"] = {
             "sched_known": sched_known, "stops": stops}
         n_stops += len(stops)
 
-    edges = _edge_pairs(statisch, opslag, ts_floor, rows)
+    edges, edge_cancels = _edge_pairs(statisch, opslag, ts_floor, date_floor, rows)
 
     built_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     size_t = _write_artifact("trains.json", {
@@ -125,19 +153,28 @@ def _build(statisch, opslag) -> None:
     size_d = _write_artifact("details.json", {
         "v": 1, "built_at": built_at, "window_s": WINDOW_S, "trains": details})
     size_e = _write_artifact("edges.json", {
-        "v": 1, "built_at": built_at, "window_s": WINDOW_S, "edges": edges})
-    log.info("inspection: %d trains, %d detail stops, %d edges, %d + %d + %d bytes",
-             len(rows), n_stops, len(edges), size_t, size_d, size_e)
+        "v": 1, "built_at": built_at, "window_s": WINDOW_S,
+        "edges": edges, "cancels": edge_cancels})
+    size_w = _write_artifact("works.json", {
+        "v": 1, "built_at": built_at, "edges": _planned_works(statisch)})
+    log.info("inspection: %d trains (%d cancelled), %d detail stops, %d edges, "
+             "%d + %d + %d + %d bytes",
+             len(rows), len(cancel_stats), n_stops, len(edges),
+             size_t, size_d, size_e, size_w)
 
 
-def _edge_pairs(statisch, opslag, ts_floor, rows) -> dict[str, list[list[int]]]:
-    """Per drawn edge the trains that passed it: [row_index, last_delta_s, last_ts],
-    sorted by delta descending. Deltas are *incurred* delay per passage (seg_obs) —
-    the numbers behind the map colour, unlike the absolute delays in trains.json.
+def _edge_pairs(statisch, opslag, ts_floor, date_floor, rows):
+    """Per drawn edge (a) the trains that passed it: [row_index, last_delta_s,
+    last_ts], sorted by delta descending, and (b) the trains reported cancelled
+    over it: [row_index, first_ts], newest first. Deltas are *incurred* delay per
+    passage (seg_obs) — the numbers behind the map colour, unlike the absolute
+    delays in trains.json; the cancels are the raw material of the blockade dash
+    (which additionally requires ≥2 trips within 90 min and no passage since).
 
     seg_obs has no service_date; a trip_id seen on two service days within the
     window is attributed to the row whose observation span is nearest to the
-    passage timestamp.
+    passage timestamp. cancel_obs does carry one, so cancels join their row
+    directly.
 
     The (edge, trip) reduction runs inside SQLite via a temp segment->edge
     mapping table; doing it in Python held a dict with one tuple key per
@@ -145,8 +182,10 @@ def _edge_pairs(statisch, opslag, ts_floor, rows) -> dict[str, list[list[int]]]:
     1 GB VM into swap. The bare delta_s next to max(ts) is SQLite's
     latest-row-wins semantics, same as the stop_obs2 query above."""
     row_index: dict[tuple[str, str], list[int]] = {}
+    row_by_key: dict[tuple[str, str, str], int] = {}
     for i, row in enumerate(rows):
         row_index.setdefault((row[COUNTRY_I], row[TRIP_I]), []).append(i)
+        row_by_key[(row[COUNTRY_I], row[TRIP_I], row[DATE_I])] = i
 
     def span_distance(i: int, ts: int) -> int:
         first_ts, last_ts = rows[i][FIRST_TS_I], rows[i][LAST_TS_I]
@@ -172,11 +211,44 @@ def _edge_pairs(statisch, opslag, ts_floor, rows) -> dict[str, list[list[int]]]:
             continue
         idx = min(candidates, key=lambda i: span_distance(i, ts))
         edges.setdefault(rand, []).append([idx, delta_s, ts])
+    cancels: dict[str, list[list[int]]] = {}
+    for rand, country, trip_id, service_date, ts in db.execute(
+            """SELECT m.rand, c.country, c.trip_id, c.service_date, min(c.ts)
+               FROM cancel_obs c JOIN edge_map m ON m.segment = c.segment
+               WHERE c.ts >= ? AND c.service_date >= ?
+               GROUP BY m.rand, c.country, c.trip_id, c.service_date""",
+            (ts_floor, date_floor)):
+        idx = row_by_key.get((country, trip_id, service_date))
+        if idx is not None:  # every cancel key got a row, but stay defensive
+            cancels.setdefault(rand, []).append([idx, ts])
     with db:
         db.execute("DROP TABLE edge_map")
     for pairs in edges.values():
         pairs.sort(key=lambda p: -p[1])
-    return edges
+    for pairs in cancels.values():
+        pairs.sort(key=lambda p: -p[1])
+    return edges, cancels
+
+
+_works_cache: dict[str, list[list]] | None = None
+
+
+def _planned_works(statisch) -> dict[str, list[list]]:
+    """Baseline closures per drawn edge: [date, hour_start, hour_end] blocks from
+    the planned_closures table — the schedule behind the "plan" entries in
+    snapshot.wrk, including blocks not currently active. Static per run (the
+    aggregator restarts after every merge), so read once and cached."""
+    global _works_cache
+    if _works_cache is None:
+        _works_cache = {}
+        try:
+            for rand, d, h0, h1 in statisch.con.execute(
+                    """SELECT rand, date, hour_start, hour_end FROM planned_closures
+                       ORDER BY rand, date, hour_start""").fetchall():
+                _works_cache.setdefault(rand, []).append([d, h0, h1])
+        except duckdb.CatalogException:
+            pass  # older merge without the table — empty artifact, page shows none
+    return _works_cache
 
 
 def _detail_stops(statisch, meta, per_cluster, by_ts) -> list[list]:

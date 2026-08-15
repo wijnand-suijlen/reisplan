@@ -45,6 +45,7 @@ class Bron:
                     seg_obs, stop_obs, cancels, passages = verwerk_tripupdates(
                         pb, cfg.feed_prefix, statisch)
                     nieuw = opslag.bewaar(cfg.land, seg_obs, stop_obs)
+                    opslag.bewaar_cancels(cfg.land, cancels)
                     nu = time.time()
                     blokkades.note_cancels(cancels, nu)
                     blokkades.note_passages(passages, nu)

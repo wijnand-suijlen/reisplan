@@ -5,17 +5,26 @@ en de inspectiepagina (`web/vertragingskaart/inspectie.html`). Doel: de ruwe
 per-trein-data achter de vertragingskaart inzichtelijk maken om ogenschijnlijke
 tegenstrijdigheden op de kaart te kunnen herleiden.
 
-Elke **300 s** bouwt de aggregator uit de laatste **4 uur** observaties drie
+Elke **300 s** bouwt de aggregator uit de laatste **4 uur** observaties vier
 artefacten en uploadt ze naar R2 onder `inspect/` (gzip, `Cache-Control:
 max-age=60`); lokaal staan kopieën in `web/vertragingskaart/data/inspect/`.
 `trains.json` en `details.json` komen uit `stop_obs2` (observatielog, absolute
-vertraging per stationscluster), `edges.json` uit `seg_obs` (opgelopen delta
-per baanvak-passage). De pagina filtert de vensters (30 min / 4 u) zelf: zonder
-baanvakfilter op `last_ts`, mét baanvakfilter uitsluitend op de passage-ts uit
-`edges.json` — dezelfde selectieregel als de kaartkleur, zodat kaart en tabel
-dezelfde treinen tellen. Eén 4-uursartefact bedient beide vensters. Het venster was eerst 24 uur;
+vertraging per stationscluster) plus `cancel_obs` (eerste waarneming van een
+annulering per trip/dienstdag/segment), `edges.json` uit `seg_obs` (opgelopen
+delta per baanvak-passage) en `cancel_obs`, `works.json` uit de
+`planned_closures`-tabel in merged.duckdb. De pagina filtert de vensters
+(30 min / 4 u) zelf: zonder baanvakfilter op `last_ts`, mét baanvakfilter
+uitsluitend op de passage-/annulerings-ts uit `edges.json` — dezelfde
+selectieregel als de kaartkleur, zodat kaart en tabel dezelfde treinen tellen.
+Eén 4-uursartefact bedient beide vensters. Het venster was eerst 24 uur;
 dat paste qua geheugen niet op de e2-micro (1 GB) en dreef de buildtijd naar
 ruim een uur.
+
+In baanvak-modus toont de pagina bovendien een blok **Kaartstatus** uit
+`snapshot.json` (hetzelfde bestand als de kaart leest): kleurklasse/p90,
+versperd-markering (`blk`) en actieve werkzaamheden (`wrk`), aangevuld met de
+baseline-blokken uit `works.json`. Zo staat naast de ruwe treindata precies wat
+de kaart er op dat moment van maakt.
 
 **Let op bij het duiden van "tegenstrijdigheden"**: de kaart kleurt op de p90
 van de *opgelopen* vertraging per baanvak (`seg_obs`, delta per segmentpassage,
@@ -37,14 +46,18 @@ service_date):
   "window_s": 14400,
   "cols": ["country", "trip_id", "service_date", "train_number", "route",
            "origin", "destination", "sched_dep", "sched_arr",
-           "delay_s", "last_stop", "first_ts", "last_ts", "n_obs", "sched_known"],
+           "delay_s", "last_stop", "first_ts", "last_ts", "n_obs", "sched_known",
+           "cancelled"],
   "rows": [
     ["nl", "366476450", "20260811", "8077", "RS18",
      "Kerkrade Centrum", "Emmen", "06:59:00", "08:15:00",
-     120, "Nijmegen", 1786512900, 1786514720, 14, true],
+     120, "Nijmegen", 1786512900, 1786514720, 14, true, false],
     ["de", "ICE 228", "20260813", "ICE 228", null,
      "Frankfurt(Main)Hbf", "Köln Hbf", null, null,
-     300, "Köln Hbf", 1786513000, 1786514000, 3, false]
+     300, "Köln Hbf", 1786513000, 1786514000, 3, false, false],
+    ["nl", "366481712", "20260813", "3542", "IC",
+     "Enkhuizen", "Amersfoort Schothorst", "07:11:00", "08:31:00",
+     null, null, 1786513200, 1786513200, 0, true, true]
   ]
 }
 ```
@@ -66,6 +79,14 @@ service_date):
 - `sched_known=false`: trip niet koppelbaar aan de statische GTFS (heel DE;
   incidenteel elders bij afwijkende id-formaten — precies wat je wilt zien in
   een debugtool).
+- `cancelled=true`: in het venster als (deels) opgeheven gemeld (`cancel_obs`:
+  trip-annulering of geskipte-stops-reeks). Een trein die **alleen** als
+  opgeheven is gezien, krijgt `delay_s=null`, `last_stop=null`, `n_obs=0`;
+  `first_ts`/`last_ts` komen dan uit de annuleringswaarnemingen (en worden bij
+  gemengde treinen over beide bronnen samengevoegd). `cancel_obs` logt per
+  (trip, dienstdag, segment) alleen de **eerste** waarneming; het
+  versperd-signaal op de kaart (BlockadeTracker: ≥2 trips in 90 min, reset door
+  een passage) blijft in-memory en wordt hier niet uit afgeleid.
 
 Het **percentiel** in de UI staat bewust niet in het artefact: het is de
 inclusieve rang van `delay_s` binnen alle treinen in het *gekozen venster* en
@@ -100,6 +121,8 @@ Sleutel: `"<country>|<trip_id>|<service_date>"` (trip_ids bevatten geen `|`).
   met `null`-tijden (omleiding of mismatch in de clustering — bewust zichtbaar).
 - `sched_known=false`: stops zijn de waargenomen clusters op volgorde van
   waarneming.
+- Een trein die alleen als opgeheven is gezien, heeft bij `sched_known=true`
+  zijn geplande stops met `null`-vertragingen; anders een lege `stops`-lijst.
 
 ## inspect/edges.json
 
@@ -113,6 +136,9 @@ reden:
   "v": 1, "built_at": "2026-08-13T07:35:00Z", "window_s": 14400,
   "edges": {
     "E1025057532-4335755650": [[412, 180, 1786514301], [87, 0, 1786514100]]
+  },
+  "cancels": {
+    "E1025057532-4335755650": [[583, 1786514200]]
   }
 }
 ```
@@ -121,11 +147,39 @@ reden:
   `delta_s` is de **opgelopen** vertraging van de laatste passage van die trein
   over dit baanvak (`seg_obs`) — de getallen achter de kaartkleur, anders dan de
   absolute vertraging in de tabel. In de UI is dit de kolom "Δ baanvak".
+- `cancels`: per rand de treinen die er in het venster als opgeheven overheen
+  gemeld zijn: `[rij-index, ts]` (eerste waarneming op deze rand), nieuwste
+  eerst — de grondstof van de versperd-markering. In de UI toont de kolom
+  "Δ baanvak" hiervoor een ✕.
 - De rij-indices verwijzen naar dezelfde build; de pagina vergelijkt `built_at`
   van beide artefacten en haalt ze bij een mismatch opnieuw op.
 - `seg_obs` heeft geen dienstdatum; een trip_id die binnen het venster op twee
   dienstdagen rijdt, wordt toegeschreven aan de rij waarvan het
-  observatie-interval het dichtst bij de passage ligt.
+  observatie-interval het dichtst bij de passage ligt. `cancel_obs` heeft er
+  wél een; annuleringen koppelen dus direct aan hun rij.
+
+## inspect/works.json
+
+Geplande buitendienststellingen per getekende rand, uit de
+`planned_closures`-tabel van de wekelijkse ETL (baseline: uren met nul geplande
+treinen tegen de referentieweek). Statisch per aggregator-run — na elke merge
+herstart `vernieuw.sh` de aggregator, wat de data ververst.
+
+```json
+{
+  "v": 1, "built_at": "2026-08-13T07:35:00Z",
+  "edges": {
+    "E1025057532-4335755650": [["20260813", 9, 14], ["20260814", 9, 14]]
+  }
+}
+```
+
+- Per blok: `[datum "YYYYMMDD", hour_start, hour_end]`, uren **inclusief**
+  (9–14 = 09:00 t/m 14:59, op de pagina getoond als "09–15 u") in
+  Europe/Amsterdam — dezelfde semantiek als `planned_closures.active_edges`.
+- Actieve werkzaamheden uit disruption-feeds/alerts staan hier bewust **niet**
+  in: die leest de pagina live uit `snapshot.json` (`wrk`), hetzelfde bestand
+  als de kaart, zodat er geen tweede, mogelijk afwijkende bron ontstaat.
 
 ## Kanttekeningen
 

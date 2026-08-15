@@ -3,6 +3,9 @@
 seg_obs: delta-vertraging per segment-passage (append bij verandering).
 stop_obs2: vertragingshistorie per trip/dienstdag/cluster (append bij verandering) —
 de laatste rij per sleutel is de definitieve vertraging, de basis voor fase 2.
+cancel_obs: eerste waarneming van een annulering per trip/dienstdag/fijn segment —
+voedt de inspectiepagina; het blokkade-signaal op de kaart blijft in-memory
+(BlockadeTracker, met passage-reset) en leest deze tabel niet.
 stop_obs (v1) is vervangen: die overschreef per trip en had geen dienstdatum, waardoor
 elke dag de vorige wiste; de tabel blijft alleen als historische data staan.
 """
@@ -45,6 +48,10 @@ class Opslag:
                  ts INT, country TEXT, trip_id TEXT, service_date TEXT,
                  cluster TEXT, delay_s INT);
                CREATE INDEX IF NOT EXISTS stop_obs2_date ON stop_obs2 (service_date);
+               CREATE TABLE IF NOT EXISTS cancel_obs (
+                 ts INT, country TEXT, trip_id TEXT, service_date TEXT,
+                 segment TEXT);
+               CREATE INDEX IF NOT EXISTS cancel_obs_date ON cancel_obs (service_date);
             """
         )
         # dedup state: last stored value per key. Losing this state is not
@@ -55,6 +62,7 @@ class Opslag:
         # selectively instead of cleared.
         self._laatste: dict[tuple, int] = {}
         self._laatste_seg: dict[tuple, tuple[int, int]] = {}  # key -> (delta_s, last_seen_ts)
+        self._cancel_gezien: set[tuple] = set()  # (country, trip, service_date, segment)
         self._next_prune = 0.0
         self._warm_caches()
 
@@ -77,8 +85,14 @@ class Opslag:
                 (now - SEG_WARM_LOOKBACK_S, CACHE_MAX)):
             # seen=now: only entries that stay absent from the feed may age out
             self._laatste_seg[(land, trip_id, segment)] = (delta_s, now)
-        log.info("dedup-cache gewarmd: %d stop, %d seg (%.1fs)",
-                 len(self._laatste), len(self._laatste_seg), time.monotonic() - t0)
+        # same phantom concern as above: without warming, a restart would re-log
+        # every cancellation the feed still carries with ts=now
+        self._cancel_gezien = set(self.db.execute(
+            """SELECT DISTINCT country, trip_id, service_date, segment
+               FROM cancel_obs WHERE service_date >= ?""", (date_floor,)))
+        log.info("dedup-cache gewarmd: %d stop, %d seg, %d cancel (%.1fs)",
+                 len(self._laatste), len(self._laatste_seg),
+                 len(self._cancel_gezien), time.monotonic() - t0)
 
     def _prune(self, now: int) -> None:
         """Drop only entries the feeds can no longer send: stop keys of finished
@@ -87,6 +101,8 @@ class Opslag:
         for key in [k for k in self._laatste
                     if len(k[2]) == 8 and k[2] < date_floor]:
             del self._laatste[key]
+        self._cancel_gezien = {k for k in self._cancel_gezien
+                               if len(k[2]) != 8 or k[2] >= date_floor}
         unseen_floor = now - SEG_UNSEEN_PRUNE_S
         for key in [k for k, (_, seen) in self._laatste_seg.items()
                     if seen < unseen_floor]:
@@ -123,6 +139,23 @@ class Opslag:
                     )
                     nieuw += 1
         return nieuw
+
+    def bewaar_cancels(self, land: str, cancels: list[tuple[str, str, str]]) -> int:
+        """Log de éérste waarneming per (trip, dienstdag, segment): feeds herhalen
+        een annulering elke poll, en anders dan bij vertragingen verandert de
+        waarde niet — één rij per sleutel volstaat voor de inspectie."""
+        ts = int(time.time())
+        vers = []
+        for segment, trip_id, service_date in cancels:
+            sleutel = (land, trip_id, service_date, segment)
+            if sleutel not in self._cancel_gezien:
+                self._cancel_gezien.add(sleutel)
+                vers.append((ts, land, trip_id, service_date, segment))
+        if vers:
+            with self.db:
+                self.db.executemany(
+                    "INSERT INTO cancel_obs VALUES (?, ?, ?, ?, ?)", vers)
+        return len(vers)
 
     def venster_ruw(self, seconden: int = 1800):
         """Per segment over het venster: (lijst delta's, set trips) — de aggregatie

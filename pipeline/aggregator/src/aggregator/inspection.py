@@ -81,31 +81,15 @@ def _build(statisch, db, con) -> None:
     ts_floor = int(time.time()) - WINDOW_S
     date_floor = (datetime.now(timezone.utc)
                   - timedelta(days=SERVICE_DATE_DAYS_BACK)).strftime("%Y%m%d")
-    # the service_date index bounds both scans to a few days regardless of table size
-    train_stats = {
-        (country, trip_id, service_date): (first_ts, n_obs)
-        for country, trip_id, service_date, first_ts, n_obs in db.execute(
-            """SELECT country, trip_id, service_date, min(ts), count(*)
-               FROM stop_obs2 WHERE service_date >= ? AND ts >= ?
-               GROUP BY country, trip_id, service_date""",
-            (date_floor, ts_floor))
-    }
-    # exactly one max() aggregate, so the bare delay_s comes from the latest row
-    observed: dict[tuple[str, str, str], dict[str, tuple[int, int]]] = {}
-    for country, trip_id, service_date, cluster, delay_s, ts in db.execute(
-            """SELECT country, trip_id, service_date, cluster, delay_s, max(ts)
-               FROM stop_obs2 WHERE service_date >= ? AND ts >= ?
-               GROUP BY country, trip_id, service_date, cluster""",
-            (date_floor, ts_floor)):
-        observed.setdefault((country, trip_id, service_date), {})[cluster] = (delay_s, ts)
-    cancel_stats = {
-        (country, trip_id, service_date): (first_ts, last_ts, n)
-        for country, trip_id, service_date, first_ts, last_ts, n in db.execute(
-            """SELECT country, trip_id, service_date, min(ts), max(ts), count(*)
-               FROM cancel_obs WHERE service_date >= ? AND ts >= ?
-               GROUP BY country, trip_id, service_date""",
-            (date_floor, ts_floor))
-    }
+    # One read transaction around the three scans: the poll loop commits from
+    # another thread, and a trip appearing between two scans made train_stats[key]
+    # a KeyError. WAL pins the first read's snapshot until COMMIT. _edge_pairs
+    # re-reads outside this snapshot but treats unknown trips defensively.
+    db.execute("BEGIN")
+    try:
+        train_stats, observed, cancel_stats = _scan_observations(db, ts_floor, date_floor)
+    finally:
+        db.execute("COMMIT")
 
     all_keys = sorted(set(observed) | set(cancel_stats))
     _resolve_missing_meta(statisch, con, {(c, t) for c, t, _ in all_keys})
@@ -165,6 +149,37 @@ def _build(statisch, db, con) -> None:
              "%d + %d + %d + %d bytes",
              len(rows), len(cancel_stats), n_stops, len(edges),
              size_t, size_d, size_e, size_w)
+
+
+def _scan_observations(db, ts_floor, date_floor):
+    """The three windowed scans behind trains.json; the service_date index
+    bounds each to a few days regardless of table size. Caller wraps them in
+    one transaction so they see the same snapshot."""
+    train_stats = {
+        (country, trip_id, service_date): (first_ts, n_obs)
+        for country, trip_id, service_date, first_ts, n_obs in db.execute(
+            """SELECT country, trip_id, service_date, min(ts), count(*)
+               FROM stop_obs2 WHERE service_date >= ? AND ts >= ?
+               GROUP BY country, trip_id, service_date""",
+            (date_floor, ts_floor))
+    }
+    # exactly one max() aggregate, so the bare delay_s comes from the latest row
+    observed: dict[tuple[str, str, str], dict[str, tuple[int, int]]] = {}
+    for country, trip_id, service_date, cluster, delay_s, ts in db.execute(
+            """SELECT country, trip_id, service_date, cluster, delay_s, max(ts)
+               FROM stop_obs2 WHERE service_date >= ? AND ts >= ?
+               GROUP BY country, trip_id, service_date, cluster""",
+            (date_floor, ts_floor)):
+        observed.setdefault((country, trip_id, service_date), {})[cluster] = (delay_s, ts)
+    cancel_stats = {
+        (country, trip_id, service_date): (first_ts, last_ts, n)
+        for country, trip_id, service_date, first_ts, last_ts, n in db.execute(
+            """SELECT country, trip_id, service_date, min(ts), max(ts), count(*)
+               FROM cancel_obs WHERE service_date >= ? AND ts >= ?
+               GROUP BY country, trip_id, service_date""",
+            (date_floor, ts_floor))
+    }
+    return train_stats, observed, cancel_stats
 
 
 def _edge_pairs(statisch, db, ts_floor, date_floor, rows):

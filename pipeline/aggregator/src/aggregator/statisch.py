@@ -1,5 +1,6 @@
 """Statische lookups uit de spike-output (merged.duckdb): stop -> cluster, clusterinfo."""
 
+import os
 import unicodedata
 from collections import deque
 from dataclasses import dataclass
@@ -30,6 +31,11 @@ class Statisch:
     def __init__(self) -> None:
         # connection stays open: trip_segments() looks up routes on demand
         con = self.con = duckdb.connect(str(MERGED_DB), read_only=True)
+        # DuckDB's default limit is 80% of RAM; on the 1 GB VM that let the
+        # buffer cache (inspection's trips/stop_times joins) crowd out the
+        # Python heap and push the whole box into swap. Instance-wide setting,
+        # so it also covers cursors handed to the maintenance thread.
+        con.execute(f"SET memory_limit = '{os.environ.get('REISPLAN_AGG_DUCKDB_MEM', '150MB')}'")
         self._trip_segments_cache: dict[tuple, list[str]] = {}
         self.cluster_van_stop: dict[str, str] = dict(
             con.execute("SELECT stop_id, cluster_id FROM stop_cluster").fetchall()

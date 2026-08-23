@@ -75,6 +75,13 @@ werkset hebben (verwerk per feed). **Test zware DuckDB-wijzigingen lokaal met
 `REISPLAN_DUCKDB_MEM=600MB`** vóór ze naar de VM gaan; op de laptop (geen limiet)
 blijven deze bugs anders onzichtbaar.
 
+Ook de aggregator zelf moet in dat gigabyte passen (aug 2026: swap-thrash, snapshots
+25 min te laat): zijn DuckDB-connectie is begrensd via `REISPLAN_AGG_DUCKDB_MEM`
+(default 150 MB), de dedup-cache gebruikt 64-bit-hashsleutels i.p.v. tuples, en
+`observaties.sqlite` wordt na de R2-export op 3 dagen retentie gehouden (de
+Parquet-bestanden op R2 zijn de duurzame punctualiteitshistorie). Zware builds
+(inspectie, archief) draaien in de onderhouds-thread, niet in de snapshot-lus.
+
 Nog open (zie PLAN.md voor de uitwerking):
 
 - Definitieve databronnen per land (dienstregeling, realtime, materieel, tarieven)

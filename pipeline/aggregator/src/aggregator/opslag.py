@@ -33,10 +33,24 @@ def _date_floor() -> str:
     return (datetime.now(timezone.utc) - timedelta(hours=8)).strftime("%Y%m%d")
 
 
+def reader_connection() -> sqlite3.Connection:
+    """Own connection for the maintenance thread (inspection/archive): sqlite3
+    connections must stay on one thread, and WAL — set once by the writer —
+    lets those long reads run beside the per-poll inserts."""
+    con = sqlite3.connect(str(RT_ARCHIEF / "observaties.sqlite"))
+    con.execute("PRAGMA busy_timeout = 15000")
+    return con
+
+
 class Opslag:
     def __init__(self) -> None:
         RT_ARCHIEF.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(str(RT_ARCHIEF / "observaties.sqlite"))
+        # WAL so the maintenance thread's reads and the archive's retention
+        # deletes never block the poll-loop inserts (or vice versa); the mode
+        # persists in the database file.
+        self.db.execute("PRAGMA journal_mode = WAL")
+        self.db.execute("PRAGMA busy_timeout = 15000")
         self.db.executescript(
             """CREATE TABLE IF NOT EXISTS seg_obs (
                  ts INT, land TEXT, segment TEXT, trip_id TEXT, delta_s INT);
@@ -60,11 +74,24 @@ class Opslag:
         # the real timestamps everywhere downstream (map window, "last seen",
         # edge passages). Hence: warmed from the DB at startup, and pruned
         # selectively instead of cleared.
-        self._laatste: dict[tuple, int] = {}
-        self._laatste_seg: dict[tuple, tuple[int, int]] = {}  # key -> (delta_s, last_seen_ts)
-        self._cancel_gezien: set[tuple] = set()  # (country, trip, service_date, segment)
+        # Keys are 64-bit hash() values of the identifying tuples, not the
+        # tuples themselves: ~750k tuple-of-strings keys held ~300 MB of heap
+        # and pushed the 1 GB VM into swap. A collision (odds ~1e-8 at this
+        # size) merely suppresses one changed-value row. hash() is salted per
+        # process, which is fine: the cache is warmed and read in one process.
+        # Stop/cancel keys are bucketed per service_date so pruning can drop
+        # whole finished days without knowing the hashed contents.
+        self._laatste: dict[str, dict[int, int]] = {}       # date -> {stop key: delay_s}
+        self._laatste_seg: dict[int, tuple[int, int]] = {}  # key -> (delta_s, last_seen_ts)
+        self._cancel_gezien: dict[str, set[int]] = {}       # date -> {cancel keys}
         self._next_prune = 0.0
         self._warm_caches()
+
+    def _n_stop(self) -> int:
+        return sum(map(len, self._laatste.values()))
+
+    def _n_cancel(self) -> int:
+        return sum(map(len, self._cancel_gezien.values()))
 
     def _warm_caches(self) -> None:
         t0 = time.monotonic()
@@ -75,7 +102,8 @@ class Opslag:
                 """SELECT country, trip_id, service_date, cluster, delay_s, max(ts)
                    FROM stop_obs2 WHERE service_date >= ?
                    GROUP BY country, trip_id, service_date, cluster""", (date_floor,)):
-            self._laatste[(country, trip_id, service_date, cluster)] = delay_s
+            self._laatste.setdefault(service_date, {})[
+                hash((country, trip_id, cluster))] = delay_s
         # capped at the freshest keys so a backlog can never balloon startup memory
         for land, trip_id, segment, delta_s, _ in self.db.execute(
                 """SELECT land, trip_id, segment, delta_s, max(ts)
@@ -84,45 +112,46 @@ class Opslag:
                    ORDER BY max(ts) DESC LIMIT ?""",
                 (now - SEG_WARM_LOOKBACK_S, CACHE_MAX)):
             # seen=now: only entries that stay absent from the feed may age out
-            self._laatste_seg[(land, trip_id, segment)] = (delta_s, now)
+            self._laatste_seg[hash((land, trip_id, segment))] = (delta_s, now)
         # same phantom concern as above: without warming, a restart would re-log
         # every cancellation the feed still carries with ts=now
-        self._cancel_gezien = set(self.db.execute(
-            """SELECT DISTINCT country, trip_id, service_date, segment
-               FROM cancel_obs WHERE service_date >= ?""", (date_floor,)))
+        for country, trip_id, service_date, segment in self.db.execute(
+                """SELECT DISTINCT country, trip_id, service_date, segment
+                   FROM cancel_obs WHERE service_date >= ?""", (date_floor,)):
+            self._cancel_gezien.setdefault(service_date, set()).add(
+                hash((country, trip_id, segment)))
         log.info("dedup-cache gewarmd: %d stop, %d seg, %d cancel (%.1fs)",
-                 len(self._laatste), len(self._laatste_seg),
-                 len(self._cancel_gezien), time.monotonic() - t0)
+                 self._n_stop(), len(self._laatste_seg),
+                 self._n_cancel(), time.monotonic() - t0)
 
     def _prune(self, now: int) -> None:
-        """Drop only entries the feeds can no longer send: stop keys of finished
-        service days, seg keys unseen in any poll for hours. Never clear."""
+        """Drop only entries the feeds can no longer send: whole buckets of
+        finished service days, seg keys unseen in any poll for hours. Never clear."""
         date_floor = _date_floor()
-        for key in [k for k in self._laatste
-                    if len(k[2]) == 8 and k[2] < date_floor]:
-            del self._laatste[key]
-        self._cancel_gezien = {k for k in self._cancel_gezien
-                               if len(k[2]) != 8 or k[2] >= date_floor}
+        for day in [d for d in self._laatste if len(d) == 8 and d < date_floor]:
+            del self._laatste[day]
+        for day in [d for d in self._cancel_gezien if len(d) == 8 and d < date_floor]:
+            del self._cancel_gezien[day]
         unseen_floor = now - SEG_UNSEEN_PRUNE_S
         for key in [k for k, (_, seen) in self._laatste_seg.items()
                     if seen < unseen_floor]:
             del self._laatste_seg[key]
-        if len(self._laatste_seg) > CACHE_MAX or len(self._laatste) > CACHE_MAX:
+        if len(self._laatste_seg) > CACHE_MAX or self._n_stop() > CACHE_MAX:
             log.warning("dedup-cache boven %d na pruning: %d stop, %d seg",
-                        CACHE_MAX, len(self._laatste), len(self._laatste_seg))
+                        CACHE_MAX, self._n_stop(), len(self._laatste_seg))
 
     def bewaar(self, land: str, seg_obs, stop_obs) -> int:
         """Alleen gewijzigde waarden opslaan — elke poll herhaalt dezelfde STU's,
         en ongewijzigd elke minuut appenden zou ~75M rijen/dag worden."""
         ts = int(time.time())
         nieuw = 0
-        if ((len(self._laatste_seg) > CACHE_MAX or len(self._laatste) > CACHE_MAX)
+        if ((len(self._laatste_seg) > CACHE_MAX or self._n_stop() > CACHE_MAX)
                 and ts >= self._next_prune):
             self._prune(ts)
             self._next_prune = ts + PRUNE_INTERVAL_S
         vers = []
         for o in seg_obs:
-            sleutel = (land, o.trip_id, o.segment)
+            sleutel = hash((land, o.trip_id, o.segment))
             cur = self._laatste_seg.get(sleutel)
             if cur is None or cur[0] != o.delta_s:
                 vers.append((ts, land, o.segment, o.trip_id, o.delta_s))
@@ -130,9 +159,10 @@ class Opslag:
         with self.db:
             self.db.executemany("INSERT INTO seg_obs VALUES (?, ?, ?, ?, ?)", vers)
             for o in stop_obs:
-                sleutel = (land, o.trip_id, o.service_date, o.cluster)
-                if self._laatste.get(sleutel) != o.delay_s:
-                    self._laatste[sleutel] = o.delay_s
+                bucket = self._laatste.setdefault(o.service_date, {})
+                sleutel = hash((land, o.trip_id, o.cluster))
+                if bucket.get(sleutel) != o.delay_s:
+                    bucket[sleutel] = o.delay_s
                     self.db.execute(
                         "INSERT INTO stop_obs2 VALUES (?, ?, ?, ?, ?, ?)",
                         (ts, land, o.trip_id, o.service_date, o.cluster, o.delay_s),
@@ -147,9 +177,10 @@ class Opslag:
         ts = int(time.time())
         vers = []
         for segment, trip_id, service_date in cancels:
-            sleutel = (land, trip_id, service_date, segment)
-            if sleutel not in self._cancel_gezien:
-                self._cancel_gezien.add(sleutel)
+            gezien = self._cancel_gezien.setdefault(service_date, set())
+            sleutel = hash((land, trip_id, segment))
+            if sleutel not in gezien:
+                gezien.add(sleutel)
                 vers.append((ts, land, trip_id, service_date, segment))
         if vers:
             with self.db:

@@ -1,8 +1,10 @@
 """Poll-loop: haalt per bron de GTFS-RT-feeds op, verwerkt ze en schrijft elke minuut
-een snapshot. Per-bron exponentiële backoff bij fouten; If-Modified-Since waar mogelijk."""
+een snapshot. Per-bron exponentiële backoff bij fouten; If-Modified-Since waar mogelijk.
+Inspectiebuilds en het dagelijkse archief draaien in een aparte onderhouds-thread."""
 
 import logging
 import os
+import threading
 import time
 
 import requests
@@ -16,7 +18,7 @@ from .db_timetables import DbTimetablesSource
 from .delta import parse_feed, verwerk_tripupdates
 from .disruptions_ns import NsDisruptionsSource
 from .disruptions_sncf import SncfDisruptionsSource
-from .opslag import Opslag
+from .opslag import Opslag, reader_connection
 from .planned_closures import PlannedClosures
 from .snapshot import bouw_snapshot, schrijf_snapshot
 from .statisch import Statisch
@@ -86,6 +88,21 @@ class Bron:
         return {"status": "ok", "age_s": int(time.time() - self.laatste_ok)}
 
 
+def _maintenance_loop(statisch: Statisch) -> None:
+    """Inspection builds and the daily archive export + retention prune, next to
+    the poll loop: a build that turns slow must never hold up the minute
+    snapshot. The heavy work is SQLite/DuckDB C code that releases the GIL. Own
+    connections, created in this thread: sqlite3 connections are single-thread,
+    and a duckdb cursor is the supported way to share the read-only database
+    across threads (delta.py queries statisch.con from the poll loop)."""
+    db = reader_connection()
+    con = statisch.con.cursor()
+    while True:
+        archive.run_if_due()
+        inspection.run_if_due(statisch, db, con)
+        time.sleep(5)
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     statisch = Statisch()
@@ -113,6 +130,8 @@ def main() -> None:
             log.info("segments.geojson naar R2 geüpload")
         except Exception as e:
             log.warning("R2-upload segments mislukt: %s", e)
+    threading.Thread(target=_maintenance_loop, args=(statisch,),
+                     name="maintenance", daemon=True).start()
     volgende_snapshot = 0.0
     while True:
         nu = time.time()
@@ -158,8 +177,6 @@ def main() -> None:
                      len(snap["seg"]), len(snap["inc"]), len(geblokkeerd),
                      len({r for w in snap["wrk"] for r in w[4]}), len(data))
             volgende_snapshot = nu + 60
-        archive.run_if_due()
-        inspection.run_if_due(statisch, opslag)
         time.sleep(1)
 
 

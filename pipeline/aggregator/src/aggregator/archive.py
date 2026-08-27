@@ -40,18 +40,21 @@ DELETE_CHUNK = 50_000  # keeps the write lock short next to the poll-loop writer
 _next_check = 0.0
 
 
-def run_if_due() -> None:
+def due() -> bool:
+    """Whether an export is due. Only the scheduling lives in the aggregator
+    process; run() itself happens in a short-lived child (jobs.py), because a
+    day's export pulls over a million rows into memory at once."""
     global _next_check
     now = time.time()
     if now < _next_check:
-        return
+        return False
     _next_check = now + CHECK_INTERVAL_S
-    if not r2.actief():
-        return  # nothing to do locally; the sqlite file itself is the local store
-    try:
-        _export_completed_days()
-    except Exception as e:
-        log.warning("archive export failed: %s", e)
+    # nothing to do locally without R2; the sqlite file itself is the local store
+    return r2.actief()
+
+
+def run() -> None:
+    _export_completed_days()
 
 
 def _export_completed_days() -> None:

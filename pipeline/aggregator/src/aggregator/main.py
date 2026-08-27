@@ -1,6 +1,7 @@
 """Poll-loop: haalt per bron de GTFS-RT-feeds op, verwerkt ze en schrijft elke minuut
 een snapshot. Per-bron exponentiële backoff bij fouten; If-Modified-Since waar mogelijk.
-Inspectiebuilds en het dagelijkse archief draaien in een aparte onderhouds-thread."""
+Inspectiebuilds en het dagelijkse archief worden gepland door een aparte
+onderhouds-thread en uitgevoerd in kortlevende subprocessen (zie jobs.py)."""
 
 import logging
 import os
@@ -9,7 +10,7 @@ import time
 
 import requests
 
-from . import archive, diagnostics, inspection, r2
+from . import archive, diagnostics, inspection, jobs, r2
 from .alert_closures import edge_groups_from_alerts
 from .alerts import verwerk_alerts
 from .blockades import BlockadeTracker
@@ -18,7 +19,7 @@ from .db_timetables import DbTimetablesSource
 from .delta import parse_feed, verwerk_tripupdates
 from .disruptions_ns import NsDisruptionsSource
 from .disruptions_sncf import SncfDisruptionsSource
-from .opslag import Opslag, reader_connection
+from .opslag import Opslag
 from .planned_closures import PlannedClosures
 from .snapshot import bouw_snapshot, schrijf_snapshot
 from .statisch import Statisch
@@ -90,19 +91,27 @@ class Bron:
 
 def _maintenance_loop(statisch: Statisch, opslag: Opslag,
                       blokkades: BlockadeTracker) -> None:
-    """Inspection builds, the daily archive export + retention prune and the heap
-    diagnostics, next to the poll loop: a build that turns slow must never hold up
-    the minute snapshot. The heavy work is SQLite/DuckDB C code that releases the
-    GIL. Own connections, created in this thread: sqlite3 connections are
-    single-thread, and a duckdb cursor is the supported way to share the read-only
-    database across threads (delta.py queries statisch.con from the poll loop).
-    Diagnostics runs here for the same reason, and because a signal-triggered heap
-    dump would otherwise stall the poll loop it is meant to explain."""
-    db = reader_connection()
+    """Schedules the inspection build and the daily archive export, and samples the
+    heap diagnostics — all beside the poll loop, so that work which turns slow can
+    never hold up the minute snapshot.
+
+    The two builds no longer run here: jobs.run() spawns a short-lived child for
+    each, because their transient working set was ratcheting the parent's heap
+    upward build after build (see jobs.py). subprocess.run blocks this thread
+    while the child works, which is exactly the intent — the builds stay
+    serialised with each other and off the poll loop.
+
+    con is this thread's own duckdb cursor: a cursor is the supported way to
+    share the read-only database across threads, and delta.py queries
+    statisch.con from the poll loop. Diagnostics uses it for duckdb_memory(), and
+    runs here so that a signal-triggered heap dump never stalls the poll loop it
+    is meant to explain."""
     con = statisch.con.cursor()
     while True:
-        archive.run_if_due()
-        inspection.run_if_due(statisch, db, con)
+        if archive.due():
+            jobs.run("archive")
+        if inspection.due():
+            jobs.run("inspection")
         diagnostics.run_if_due(statisch, opslag, blokkades, con)
         time.sleep(5)
 

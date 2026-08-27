@@ -15,8 +15,8 @@ docs/inspectie-schema.md):
 The client filters the 30min/4h windows itself on last_ts, so one 4h artifact
 serves both. The window was 24h once; a full day of all-country data made the
 build's working set far exceed the 1 GB VM and every build thrashed swap for
-over an hour. Schedule metadata comes from merged.duckdb through the maintenance
-thread's own duckdb cursor. stop_obs2.trip_id is the raw RT id while merged
+over an hour. Schedule metadata comes from merged.duckdb, through the connection
+the child process opens for itself. stop_obs2.trip_id is the raw RT id while merged
 trip_ids are feed-prefixed ("nl:123"), hence the explicit prefix in the join.
 DE trip_ids are IRIS labels ("ICE 228") that never match GTFS; those trains get
 sched_known=false and their observed stops in ts order.
@@ -61,23 +61,22 @@ class TripMeta:
     stops: list[list]  # [cluster_id | None, station_name, arrival_time, departure_time]
 
 
-def run_if_due(statisch, db, con) -> None:
-    """Called from the maintenance thread, never the poll loop: a build takes
-    minutes and must not hold up the minute snapshot. db is that thread's own
-    sqlite connection (opslag.reader_connection), con its own duckdb cursor —
-    neither library's connections may be shared across threads."""
+def due() -> bool:
+    """Whether a build is due. Called from the maintenance thread, never the poll
+    loop. Only the scheduling lives in the aggregator process — build() itself
+    runs in a short-lived child (jobs.py), so its working set dies with it."""
     global _next_build
     now = time.time()
     if now < _next_build:
-        return
+        return False
     _next_build = now + BUILD_INTERVAL_S
-    try:
-        _build(statisch, db, con)
-    except Exception as e:
-        log.warning("inspection build failed: %s", e)
+    return True
 
 
-def _build(statisch, db, con) -> None:
+def build(statisch, db, con) -> None:
+    """One build. db is a sqlite connection (opslag.reader_connection), con a
+    duckdb connection — in the child both are freshly opened and single-threaded,
+    which is what those libraries require anyway."""
     ts_floor = int(time.time()) - WINDOW_S
     date_floor = (datetime.now(timezone.utc)
                   - timedelta(days=SERVICE_DATE_DAYS_BACK)).strftime("%Y%m%d")

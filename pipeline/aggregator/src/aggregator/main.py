@@ -9,7 +9,7 @@ import time
 
 import requests
 
-from . import archive, inspection, r2
+from . import archive, diagnostics, inspection, r2
 from .alert_closures import edge_groups_from_alerts
 from .alerts import verwerk_alerts
 from .blockades import BlockadeTracker
@@ -88,18 +88,22 @@ class Bron:
         return {"status": "ok", "age_s": int(time.time() - self.laatste_ok)}
 
 
-def _maintenance_loop(statisch: Statisch) -> None:
-    """Inspection builds and the daily archive export + retention prune, next to
-    the poll loop: a build that turns slow must never hold up the minute
-    snapshot. The heavy work is SQLite/DuckDB C code that releases the GIL. Own
-    connections, created in this thread: sqlite3 connections are single-thread,
-    and a duckdb cursor is the supported way to share the read-only database
-    across threads (delta.py queries statisch.con from the poll loop)."""
+def _maintenance_loop(statisch: Statisch, opslag: Opslag,
+                      blokkades: BlockadeTracker) -> None:
+    """Inspection builds, the daily archive export + retention prune and the heap
+    diagnostics, next to the poll loop: a build that turns slow must never hold up
+    the minute snapshot. The heavy work is SQLite/DuckDB C code that releases the
+    GIL. Own connections, created in this thread: sqlite3 connections are
+    single-thread, and a duckdb cursor is the supported way to share the read-only
+    database across threads (delta.py queries statisch.con from the poll loop).
+    Diagnostics runs here for the same reason, and because a signal-triggered heap
+    dump would otherwise stall the poll loop it is meant to explain."""
     db = reader_connection()
     con = statisch.con.cursor()
     while True:
         archive.run_if_due()
         inspection.run_if_due(statisch, db, con)
+        diagnostics.run_if_due(statisch, opslag, blokkades, con)
         time.sleep(5)
 
 
@@ -130,7 +134,8 @@ def main() -> None:
             log.info("segments.geojson naar R2 geüpload")
         except Exception as e:
             log.warning("R2-upload segments mislukt: %s", e)
-    threading.Thread(target=_maintenance_loop, args=(statisch,),
+    diagnostics.install_handlers()  # main thread only; see diagnostics module
+    threading.Thread(target=_maintenance_loop, args=(statisch, opslag, blokkades),
                      name="maintenance", daemon=True).start()
     volgende_snapshot = 0.0
     while True:

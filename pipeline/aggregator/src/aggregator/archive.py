@@ -43,14 +43,18 @@ _next_check = 0.0
 def due() -> bool:
     """Whether an export is due. Only the scheduling lives in the aggregator
     process; run() itself happens in a short-lived child (jobs.py), because a
-    day's export pulls over a million rows into memory at once."""
-    global _next_check
-    now = time.time()
-    if now < _next_check:
-        return False
-    _next_check = now + CHECK_INTERVAL_S
+    day's export pulls over a million rows into memory at once. r2.actief() is
+    four dict lookups, so re-checking it every loop pass costs nothing and lets
+    the export start on its own once credentials appear."""
     # nothing to do locally without R2; the sqlite file itself is the local store
-    return r2.actief()
+    return time.time() >= _next_check and r2.actief()
+
+
+def schedule_next() -> None:
+    """Call after a run finishes — see inspection.schedule_next for why the
+    interval is measured from the end rather than the start."""
+    global _next_check
+    _next_check = time.time() + CHECK_INTERVAL_S
 
 
 def run() -> None:

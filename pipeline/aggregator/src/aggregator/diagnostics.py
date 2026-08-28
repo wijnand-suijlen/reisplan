@@ -24,6 +24,14 @@ thread, so a dump never stalls the poll loop.
 The $ anchor matters: it selects the python process and not the `uv run
 aggregator` parent, whose default action for SIGUSR1/2 is to terminate.
 
+Round two added what round one turned out to be missing. The periodic line now
+carries the count and size of anonymous mappings (the running signature of arena
+retention: 203 in the two-day-old thrashing process against ~74 in a healthy
+one), and the state of the DE source — whose plan and trip_paths dicts are only
+bounded by a safety valve that wipes them whole, and which no probe had reached.
+The dump adds the arena lines from sys._debugmallocstats(), the precise version
+of the same question.
+
 Two blind spots, both deliberate. gc.get_objects() only sees GC-tracked objects,
 so str/bytes/int leaves are missing from the histogram — the sampled deep sizes
 per cache compensate, since those attribute the leaves to the container holding
@@ -37,6 +45,7 @@ import logging
 import os
 import signal
 import sys
+import tempfile
 import threading
 import time
 from itertools import islice
@@ -76,6 +85,8 @@ def _libc():
             lib.mallinfo2.argtypes = []
             lib.malloc_trim.restype = ctypes.c_int
             lib.malloc_trim.argtypes = [ctypes.c_size_t]
+            lib.fflush.restype = ctypes.c_int
+            lib.fflush.argtypes = [ctypes.c_void_p]  # NULL = flush every stream
             _libc_handle = lib
         except (OSError, AttributeError) as e:
             log.warning("diag: libc unavailable (%s) — no mallinfo/trim", e)
@@ -114,6 +125,68 @@ def _mallinfo() -> dict[str, int] | None:
             "free": mi.fordblks, "keepcost": mi.keepcost}
 
 
+def _anon_maps(path: str = "/proc/self/maps") -> tuple[int, int]:
+    """Count and total size of anonymous mappings, from /proc/self/maps. This is
+    the running signature of arena retention: the process that had thrashed for
+    two days carried 203 of them (1333 MB virtual), a healthy one about 74. Only
+    /proc/self/maps, never smaps — the latter walks page tables and is far too
+    expensive to put on a timer on this box. Returns (0, 0) where there is no
+    /proc at all, which is how this reads on a developer laptop."""
+    n = total = 0
+    try:
+        with open(path) as f:
+            for line in f:
+                parts = line.split()
+                # 5 fields = no pathname column, so anonymous; [heap]/[stack] have 6
+                if len(parts) == 5:
+                    lo, _, hi = parts[0].partition("-")
+                    n += 1
+                    total += int(hi, 16) - int(lo, 16)
+    except OSError:
+        pass
+    return n, total
+
+
+def _obmalloc_stats() -> list[str]:
+    """The arena lines from sys._debugmallocstats() — the precise version of what
+    _anon_maps approximates, and the direct test of the arena-retention story.
+
+    Only ever called from the on-demand dump, never the timer: the function
+    fprintf()s to fd 2 from C, so reading it means swapping that fd, and any log
+    line the poll loop emits meanwhile would vanish into the capture file. The
+    logging handler's lock is held across the swap to make that window as close
+    to zero as it can be."""
+    handler_lock = None
+    handlers = logging.getLogger().handlers
+    if handlers and getattr(handlers[0], "lock", None) is not None:
+        handler_lock = handlers[0].lock
+    try:
+        with tempfile.TemporaryFile("w+") as tmp:
+            if handler_lock:
+                handler_lock.acquire()
+            saved = os.dup(2)
+            try:
+                sys.stderr.flush()
+                lib = _libc()
+                if lib is not None:
+                    lib.fflush(None)      # stderr is unbuffered in glibc, but be sure
+                os.dup2(tmp.fileno(), 2)
+                sys._debugmallocstats()
+                if lib is not None:
+                    lib.fflush(None)
+            finally:
+                os.dup2(saved, 2)
+                os.close(saved)
+                if handler_lock:
+                    handler_lock.release()
+            tmp.seek(0)
+            return [line.rstrip() for line in tmp
+                    if "arena" in line or "bytes in allocated blocks" in line]
+    except Exception as e:
+        log.warning("diag: _debugmallocstats failed: %s", e)
+        return []
+
+
 def _duckdb_mem(con) -> tuple[int, int] | None:
     try:
         used, tmp = con.execute(
@@ -125,7 +198,7 @@ def _duckdb_mem(con) -> tuple[int, int] | None:
         return None
 
 
-def _caches(statisch, opslag, blokkades) -> dict[str, object]:
+def _caches(statisch, opslag, blokkades, bronnen) -> dict[str, object]:
     """Entry counts of every container that could plausibly grow. Each probe is
     guarded: the poll loop mutates these dicts concurrently, and a diagnostic
     must never be the thing that kills the maintenance thread."""
@@ -145,6 +218,24 @@ def _caches(statisch, opslag, blokkades) -> dict[str, object]:
         "names": lambda: len(statisch.cluster_by_name),
         "adj": lambda: len(statisch._adjacency or ()),
     }
+    # The DE source (db_timetables) keeps state no other probe reaches, and two of
+    # its containers are only bounded by a safety valve that wipes them whole:
+    # plan entries ("plan ids are not individually dated") and trip_paths ("paths
+    # of never-observed trips accumulate"). A second model reading this code
+    # spotted them; the heap dump had been showing PlanStop and _StopState climb
+    # all along and they were misread as build churn.
+    for bron in bronnen or ():
+        if not hasattr(bron, "trip_paths"):
+            continue
+        probes.update({
+            "de_planst": lambda b=bron: len(b.plan),
+            "de_plan": lambda b=bron: sum(map(len, b.plan.values())),
+            "de_slices": lambda b=bron: len(b.plan_slices),
+            "de_paths": lambda b=bron: len(b.trip_paths),
+            "de_labels": lambda b=bron: len(b.trip_labels),
+            "de_state": lambda b=bron: len(b.trip_state),
+            "de_stops": lambda b=bron: sum(map(len, b.trip_state.values())),
+        })
     out: dict[str, object] = {}
     for name, probe in probes.items():
         try:
@@ -154,7 +245,7 @@ def _caches(statisch, opslag, blokkades) -> dict[str, object]:
     return out
 
 
-def _sample(statisch, opslag, blokkades, con) -> None:
+def _sample(statisch, opslag, blokkades, bronnen, con) -> None:
     parts = []
     mem = _proc_mem()
     if mem:
@@ -166,9 +257,11 @@ def _sample(statisch, opslag, blokkades, con) -> None:
     duck = _duckdb_mem(con)
     if duck:
         parts.append(f"duckdb={_mb(duck[0])} tmp={_mb(duck[1])}")
+    n_maps, size_maps = _anon_maps()
+    parts.append(f"anonmaps={n_maps}/{_mb(size_maps)}")
     parts.append(f"pyblocks={sys.getallocatedblocks()}")
     parts.append("caches " + " ".join(
-        f"{k}={v}" for k, v in _caches(statisch, opslag, blokkades).items()))
+        f"{k}={v}" for k, v in _caches(statisch, opslag, blokkades, bronnen).items()))
     log.info("diag: %s", " | ".join(parts))
 
 
@@ -222,7 +315,7 @@ def _describe(obj) -> str:
     return f"{kind} len={size}{head}"
 
 
-def _heap_dump(statisch, opslag, blokkades) -> None:
+def _heap_dump(statisch, opslag, blokkades, bronnen) -> None:
     t0 = time.monotonic()
     before = _proc_mem()
     gc.collect()
@@ -266,6 +359,14 @@ def _heap_dump(statisch, opslag, blokkades) -> None:
         "inspection._meta_cache": inspection._meta_cache,
         "blokkades._cancels": getattr(blokkades, "_cancels", None),
     }
+    for bron in bronnen or ():
+        if hasattr(bron, "trip_paths"):
+            named.update({
+                "de.plan": bron.plan,
+                "de.trip_paths": bron.trip_paths,
+                "de.trip_labels": bron.trip_labels,
+                "de.trip_state": bron.trip_state,
+            })
     for name, obj in named.items():
         if obj is None:
             continue
@@ -275,6 +376,8 @@ def _heap_dump(statisch, opslag, blokkades) -> None:
             length = -1
         log.info("diag:   cache %-30s len=%-9d ~%s (sampled)",
                  name, length, _mb(_estimate_size(obj)))
+    for line in _obmalloc_stats():
+        log.info("diag:   obmalloc %s", line.strip())
     log.info("diag: heap dump done in %.1fs", time.monotonic() - t0)
 
 
@@ -307,19 +410,19 @@ def install_handlers() -> None:
             log.warning("diag: no handler for %s (%s): %s", what, sig, e)
 
 
-def run_if_due(statisch, opslag, blokkades, con) -> None:
+def run_if_due(statisch, opslag, blokkades, bronnen, con) -> None:
     global _next_sample
     now = time.time()
     if now >= _next_sample:
         _next_sample = now + INTERVAL_S
         try:
-            _sample(statisch, opslag, blokkades, con)
+            _sample(statisch, opslag, blokkades, bronnen, con)
         except Exception as e:
             log.warning("diag: sample failed: %s", e)
     if _dump_wanted.is_set():
         _dump_wanted.clear()
         try:
-            _heap_dump(statisch, opslag, blokkades)
+            _heap_dump(statisch, opslag, blokkades, bronnen)
         except Exception as e:
             log.warning("diag: heap dump failed: %s", e)
     if _trim_wanted.is_set():

@@ -65,12 +65,19 @@ def due() -> bool:
     """Whether a build is due. Called from the maintenance thread, never the poll
     loop. Only the scheduling lives in the aggregator process — build() itself
     runs in a short-lived child (jobs.py), so its working set dies with it."""
+    return time.time() >= _next_build
+
+
+def schedule_next() -> None:
+    """Call after a build finishes, never before it starts. Stamping the next
+    build at the start meant that once a build outgrew BUILD_INTERVAL_S — they
+    average ~394s against an interval of 300 — the next one was already due the
+    moment jobs.run() returned. A child was then alive 100% of the time, which on
+    a 1 GB box kept the parent permanently evicted to swap and cost the poll loop
+    its minute cadence. Measuring from the end keeps a real gap between builds
+    however long they take."""
     global _next_build
-    now = time.time()
-    if now < _next_build:
-        return False
-    _next_build = now + BUILD_INTERVAL_S
-    return True
+    _next_build = time.time() + BUILD_INTERVAL_S
 
 
 def build(statisch, db, con) -> None:

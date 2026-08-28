@@ -90,7 +90,7 @@ class Bron:
 
 
 def _maintenance_loop(statisch: Statisch, opslag: Opslag,
-                      blokkades: BlockadeTracker) -> None:
+                      blokkades: BlockadeTracker, bronnen_actief: list) -> None:
     """Schedules the inspection build and the daily archive export, and samples the
     heap diagnostics — all beside the poll loop, so that work which turns slow can
     never hold up the minute snapshot.
@@ -101,6 +101,9 @@ def _maintenance_loop(statisch: Statisch, opslag: Opslag,
     while the child works, which is exactly the intent — the builds stay
     serialised with each other and off the poll loop.
 
+    bronnen_actief goes to diagnostics only: the DE source keeps state of its
+    own (plan, trip_paths) that no other probe reaches.
+
     con is this thread's own duckdb cursor: a cursor is the supported way to
     share the read-only database across threads, and delta.py queries
     statisch.con from the poll loop. Diagnostics uses it for duckdb_memory(), and
@@ -110,9 +113,11 @@ def _maintenance_loop(statisch: Statisch, opslag: Opslag,
     while True:
         if archive.due():
             jobs.run("archive")
+            archive.schedule_next()   # from the end, not the start; see that module
         if inspection.due():
             jobs.run("inspection")
-        diagnostics.run_if_due(statisch, opslag, blokkades, con)
+            inspection.schedule_next()
+        diagnostics.run_if_due(statisch, opslag, blokkades, bronnen_actief, con)
         time.sleep(5)
 
 
@@ -144,7 +149,8 @@ def main() -> None:
         except Exception as e:
             log.warning("R2-upload segments mislukt: %s", e)
     diagnostics.install_handlers()  # main thread only; see diagnostics module
-    threading.Thread(target=_maintenance_loop, args=(statisch, opslag, blokkades),
+    threading.Thread(target=_maintenance_loop,
+                     args=(statisch, opslag, blokkades, actief),
                      name="maintenance", daemon=True).start()
     volgende_snapshot = 0.0
     while True:

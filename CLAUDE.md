@@ -80,7 +80,18 @@ Ook de aggregator zelf moet in dat gigabyte passen (aug 2026: swap-thrash, snaps
 (default 150 MB), de dedup-cache gebruikt 64-bit-hashsleutels i.p.v. tuples, en
 `observaties.sqlite` wordt na de R2-export op 3 dagen retentie gehouden (de
 Parquet-bestanden op R2 zijn de duurzame punctualiteitshistorie). Zware builds
-(inspectie, archief) draaien in de onderhouds-thread, niet in de snapshot-lus.
+(inspectie, archief) worden door de onderhouds-thread alleen nog gepland en
+draaien in kortlevende subprocessen (`jobs.py`), zodat hun werkset met het kind
+sterft in plaats van de vloer van de ouder op te tillen.
+
+**Lees `docs/geheugen-op-1gb.md` voordat je hier geheugen gaat onderzoeken.** Dat
+rapport legt vast welke verklaringen mét cijfers zijn uitgesloten — glibc-arena-
+fragmentatie, per-thread arena's, jemalloc in DuckDB, en daarmee ook het nut van
+`malloc_trim` en `MALLOC_ARENA_MAX` — plus hoe je meet (`diagnostics.py`: trap A
+elke 10 min, `SIGUSR1` voor een heap dump) en waarom je bodems tussen dagen moet
+vergelijken in plaats van hellingen binnen één dagdeel. Nog open op dat front: de
+`plan`-dict in `db_timetables.py` groeit onbegrensd, doordat zijn klep per station
+telt terwijl de groei zich over honderden stations verdeelt.
 
 Nog open (zie PLAN.md voor de uitwerking):
 

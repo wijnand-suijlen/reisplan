@@ -353,8 +353,21 @@ class DbTimetablesSource:
                 self.trip_paths.pop(head, None)
         if len(self.trip_paths) > 50_000:  # paths of never-observed trips accumulate
             self.trip_paths.clear()
+        # Plan entries do carry their service date: the stop id is
+        # "{trip}-{yymmddHHMM}-{idx}" and _split_stop_id already decodes it. So whole
+        # finished service days can go. The per-station valve below cannot do that job —
+        # growth spreads over every polled station at a few hundred entries each, so
+        # 20_000 is never reached. Measured aug 2026: 404 stations holding 179k entries,
+        # zero evictions in 48 hours, and the last unbounded container in the aggregator
+        # (docs/geheugen-op-1gb.md). Yesterday rather than today is the floor: a train
+        # that departed before midnight keeps yesterday's service date while it runs on.
+        floor = (datetime.fromtimestamp(now, BERLIN) - timedelta(days=1)).strftime("%Y%m%d")
         for eva, entries in self.plan.items():
-            if len(entries) > 20_000:  # safety valve; plan ids are not individually dated
+            stale = [sid for sid in entries
+                     if (parts := self._split_stop_id(sid)) and parts[2] and parts[2] < floor]
+            for sid in stale:
+                del entries[sid]
+            if len(entries) > 20_000:  # backstop for ids without a parsable date
                 self.plan[eva] = {}
 
     # -- main-loop interface ---------------------------------------------------

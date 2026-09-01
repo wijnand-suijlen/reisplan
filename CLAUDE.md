@@ -89,9 +89,10 @@ rapport legt vast welke verklaringen mét cijfers zijn uitgesloten — glibc-are
 fragmentatie, per-thread arena's, jemalloc in DuckDB, en daarmee ook het nut van
 `malloc_trim` en `MALLOC_ARENA_MAX` — plus hoe je meet (`diagnostics.py`: trap A
 elke 10 min, `SIGUSR1` voor een heap dump) en waarom je bodems tussen dagen moet
-vergelijken in plaats van hellingen binnen één dagdeel. Nog open op dat front: de
-`plan`-dict in `db_timetables.py` groeit onbegrensd, doordat zijn klep per station
-telt terwijl de groei zich over honderden stations verdeelt.
+vergelijken in plaats van hellingen binnen één dagdeel. De laatste onbegrensde
+container (`plan` in `db_timetables.py`) is gerepareerd in `215ddad`; **die fix
+wacht nog op verificatie — zie `docs/openstaand-de-plan-verificatie.md` voor de
+meting, de referentiegetallen en wat de uitkomsten betekenen.**
 
 Nog open (zie PLAN.md voor de uitwerking):
 

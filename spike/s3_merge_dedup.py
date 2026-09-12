@@ -10,6 +10,7 @@ Rapporten: data/rapporten/grensstations.md
 """
 
 import csv
+import hashlib
 import math
 import re
 import resource
@@ -147,6 +148,21 @@ def repareer_nulpunt(rows):
     return uit
 
 
+def stabiel_cluster_id(soort: str, *delen: object) -> str:
+    """Cluster-id uit de inhoud, niet uit de volgorde waarin de rijen langskwamen.
+
+    Stond tot 12 sep 2026 op een oplopende teller (`nm:1`, `nm:2`, ...). Dat maakte
+    elk artefact dat een merge overleeft ongeldig: de spoorgeometrie in
+    randen.json.gz is gesleuteld op clusterparen, en na de eerste verversing wees
+    0,1% van de `nm:`-paren nog naar hetzelfde station (86,7% ervoor). Bijna een
+    derde van de kaart werd daardoor een rechte lijn. Zie docs/geheugen-op-1gb.md.
+
+    hashlib en niet hash(): die laatste is per proces gerandomiseerd voor strings.
+    """
+    ruw = "\x1f".join([soort, *(str(d) for d in delen)])
+    return "nm:" + hashlib.blake2s(ruw.encode("utf-8"), digest_size=6).hexdigest()
+
+
 def cluster_stations(con, rows):
     cluster_van = {}
     clusters = {}  # cluster_id -> dict
@@ -174,7 +190,6 @@ def cluster_stations(con, rows):
         if c["lat"] is not None:
             ankers[(round(c["lat"], 2), round(c["lon"], 2), normaliseer_naam(c["naam"]))].append(cid)
 
-    teller = 0
     for sleutel, groep in grid.items():
         lat0, lon0, nnaam = sleutel
         # match met bestaand UIC-cluster in buurcellen?
@@ -186,16 +201,18 @@ def cluster_stations(con, rows):
                     if haversine_m(groep[0][3], groep[0][4], c["lat"], c["lon"]) <= 300:
                         kandidaat = cid
         if kandidaat is None:
-            teller += 1
-            kandidaat = f"nm:{teller}"
+            kandidaat = stabiel_cluster_id("grid", nnaam, f"{lat0:.2f}", f"{lon0:.2f}")
+            if kandidaat in clusters:
+                raise SystemExit(f"cluster-id-botsing op {kandidaat} ({nnaam} {lat0},{lon0})")
             clusters[kandidaat] = {"uic": None, "naam": groep[0][2], "lat": groep[0][3], "lon": groep[0][4], "feeds": set()}
         for station_id, feed, naam, lat, lon in groep:
             if haversine_m(lat, lon, clusters[kandidaat]["lat"], clusters[kandidaat]["lon"]) <= 300 or clusters[kandidaat]["uic"] is None:
                 cluster_van[station_id] = kandidaat
                 clusters[kandidaat]["feeds"].add(feed)
             else:
-                teller += 1
-                los = f"nm:{teller}"
+                los = stabiel_cluster_id("los", station_id)
+                if los in clusters:
+                    raise SystemExit(f"cluster-id-botsing op {los} ({station_id})")
                 clusters[los] = {"uic": None, "naam": naam, "lat": lat, "lon": lon, "feeds": {feed}}
                 cluster_van[station_id] = los
 

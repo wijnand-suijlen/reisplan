@@ -102,26 +102,20 @@ en de VM twee verschillende `segments.geojson` naar dezelfde R2-sleutel schrijve
 is publiek; fork-PR's krijgen geen secrets, maar iedereen die naar `main` kan
 pushen kan ze via een workflow uitlezen.
 
-### C. Beslissen: is maandag 00:00 genoeg marge?
+### ~~C. Beslissen over de starttijd~~ ✅ *besloten 12 sep: middernacht blijft*
 
-De verversing duurt ~6,5 uur, dus vanaf middernacht is hij rond 06:30 lokaal klaar
-— net voor de spits. De aggregator ligt daarbij 78 minuten stil, rond 02:15–03:35
-lokaal; dat deel zit veilig in de nacht. Maar als één feed uitschiet (de Zwitserse
-filterstap kostte op 7 september 55 minuten) loopt de staart de spits in. Zondag
-22:00 lokaal geeft twee uur extra marge. Zeg het als je dat wil, dan pas ik het aan.
+Overwogen is zondag 22:00 lokaal, voor twee uur extra marge op de ochtendspits.
+Afgewezen, en om een betere reden dan de marge: om 22:00 rijden de laatste
+zondagse treinen nog. De 78 minuten dat de aggregator stilligt zouden dan precies
+over dat staartje vallen, en die ritten worden dan niet geregistreerd — de
+punctualiteitshistorie krijgt elke week een gat op hetzelfde moment. Vanaf
+middernacht valt de stilstand rond 02:15–03:35, wanneer er vrijwel niets rijdt.
 
-### D. Optioneel: de git-credential-keten rechtzetten
+De prijs is dat de staart (s10, read-only) tot ~06:30 doorloopt en de spits kan
+raken als een feed uitschiet. Dat is de goedkopere van de twee kwaden: s10 laat de
+aggregator gewoon draaien.
 
-`osxkeychain` staat vóór de store-helper en levert een verouderd credential, dus
-elke push gaat nu met een `-c`-omweg. Eenmalig rechtzetten:
-
-```
-git config --local --unset-all credential.helper
-git config --local --add credential.helper ""
-git config --local --add credential.helper "store --file=$HOME/.config/reisplan/github/credentials"
-```
-
-`.git/config` kan ik zelf niet schrijven — dat pad staat in de sandbox-denylist.
+### ~~D. De git-credential-keten rechtzetten~~ ✅ *gedaan 12 sep*
 
 ---
 
@@ -145,4 +139,5 @@ Uit het onderzoek van vandaag, op volgorde van verwachte opbrengst:
 - **s8 opnieuw draaien** is alleen nodig als de stationsset wezenlijk wijzigt — nu
   de id's stabiel zijn, klopt die aanname uit PLAN.md weer. Het kan niet op de VM
   (4,3 GB piek, gemeten); het kan lokaal in 47 s, of in GitHub Actions.
-- **`docs/vm-beheer.md`** bijwerken met de nieuwe units, als dat document bestaat.
+- **`docs/vm-beheer.md`** bijwerken met de twee nieuwe units
+  (`reisplan-aggregator-herstart`) en de gewijzigde starttijd van de verversing.

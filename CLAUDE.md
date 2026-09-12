@@ -4,6 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Projectstatus
 
+> **Er staat werk open.** `docs/openstaand-uitrol.md` is de actuele werklijst:
+> wat Claude nog moet doen, wat de eigenaar moet doen (o.a. R2-secrets op GitHub
+> zetten) en in welke volgorde. Lees dat bestand aan het begin van een sessie en
+> verwijder het pas als alles afgevinkt is.
+
 **Planningsfase — er wordt nog niet geprogrammeerd.** De eigenaar werkt het ontwerp eerst samen met Claude uit. Begin niet met implementeren zonder expliciete opdracht. Build-, test- en lint-commando's worden hier aangevuld zodra de techstack gekozen is.
 
 Voertaal in dit project (documentatie, discussie, UI-teksten) is Nederlands. **Code is Engels** (besloten 2026-08-10: identifiers, commentaar, logmeldingen) — de oudere Nederlandstalige spike-/aggregatorcode wordt geleidelijk gemigreerd; nieuwe code altijd in het Engels.

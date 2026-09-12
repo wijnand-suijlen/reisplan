@@ -45,7 +45,14 @@ def laad_randen() -> dict:
         RANDEN_PAD.parent.mkdir(parents=True, exist_ok=True)
         RANDEN_PAD.write_bytes(gzip.compress(data))
         return json.loads(data)
-    return {"randen": {}, "dekking": {}}
+    # Geen stille lege kaart meer. Zonder geometrie valt élk segment terug op een
+    # rechte lijn tussen twee stations; dat zag er een maand lang uit als een
+    # geslaagde run (in Actions: 16.062 van 16.062 randen recht, exitcode 0).
+    raise SystemExit(
+        f"geen spoorgeometrie: {RANDEN_PAD} ontbreekt en R2 leverde niets. "
+        "De kaart zou volledig uit rechte lijnen bestaan. Zet het bestand terug "
+        "(het staat in de repo) of draai spike/s8_geometrie.py opnieuw."
+    )
 
 
 def main() -> None:

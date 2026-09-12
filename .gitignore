@@ -1,5 +1,14 @@
-data/
+# data/ met /* in plaats van /, anders daalt git er niet in af en kan de
+# uitzondering hieronder niets terughalen.
+data/*
 web/vertragingskaart/data/
+# Uitzondering: de OSM-routering is een traag bewegende *invoer*, geen build-output.
+# Hij hoort in de repo zodat een verse checkout (GitHub Actions!) een echte kaart
+# bouwt in plaats van stilletjes terug te vallen op rechte lijnen. Herdraaien
+# (spike/s8_geometrie.py, 4,3 GB piek) alleen als de stationsset wezenlijk wijzigt.
+!data/geometrie/
+data/geometrie/*
+!data/geometrie/randen.json.gz
 .env
 *.zip
 __pycache__/

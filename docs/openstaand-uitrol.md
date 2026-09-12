@@ -13,24 +13,53 @@ inhoud (`84ecd46`), de geometrie staat in de repo (`a58e199`), en `laad_randen()
 faalt niet meer stil. Daarmee kan GitHub Actions de publicerende kant worden
 waarvoor het in augustus ontworpen is.
 
-## Stand op 12 september 13:15 UTC
+## Uitrol afgerond, 12 september 15:37 UTC
 
-| | |
-|---|---|
-| gepusht en actief op de VM | `84ecd46`, `a58e199` (opgehaald bij de `git pull` van 11:10) |
-| gepusht, nog niet geïnstalleerd | `d498441`, `3ede764` — unit-bestanden in `deploy/` |
-| draait nu | handmatige verversing, gestart 11:09, mergefase sinds 12:13 |
-| verwacht klaar | 17:30–18:00 UTC |
+Verversing 11:09 → 15:34 (4 u 25 min; de aggregator lag stil 12:13–13:32).
+Units geïnstalleerd, aggregator herstart om 15:36. Alles wat hieronder als
+"Claude 1–4" stond is gedaan.
+
+| meting | vóór | ná |
+|---|---|---|
+| rechte-lijn-fallbacks op de kaart | 11.971 van 38.992 (30,7 %) | **2.130 van 29.158 (7,3 %)** |
+| gekleurde baanvakken in de snapshot | 6.494 | **11.241** |
+| statisch plafond van de stationsselectie (s10) | 7.204 randen | **12.321 randen** |
+| clusters | 13.428 | 13.515 (3.641 met uic) |
+
+Per land — let op dat de kolom "baanvakken" krimpt: de verdwenen features zijn de
+rechte lijnen die er nooit hadden moeten staan.
+
+| land | baanvakken | rechte lijnen | in snapshot |
+|---|---|---|---|
+| de | 21.252 → 14.654 | 7.736 → **1.135** | 679 → **1.412** |
+| nl | 4.126 → 3.193 | 1.010 → **78** | 721 → **1.608** |
+| be | 1.603 → 1.500 | 145 → **41** | 652 → **999** |
+| fr | 4.883 → 4.881 | 193 → 191 | 2.394 → **3.740** |
+| ch | 6.627 → 4.435 | 2.386 → **190** | 2.047 → **3.471** |
+
+Frankrijk is vrijwel onveranderd, precies zoals de diagnose voorspelde: de Franse
+dienstregeling was in dat maandje het minst verschoven, dus daar bleven de
+sleutels toevallig kloppen.
+
+**Twee oorzaken, niet één.** De snapshot ging van 6.494 naar 11.241, maar dat is
+de som van twee ingrepen van dezelfde dag: het kleuringsvenster van 30 min naar
+2 uur bracht het naar ~9.600, de geometriefix deed de rest. De fallback-cijfers en
+het s10-plafond zijn wél zuiver aan de cluster-id-fix toe te schrijven.
+
+De VM en GitHub Actions produceerden onafhankelijk van elkaar **exact dezelfde**
+`segments.geojson`-regel (29.158 randen, 2.130 fallbacks) uit dezelfde feeds en
+dezelfde meegecommitte geometrie. Dat is het bewijs dat de sleutels nu stabiel
+zijn: vóór de fix waren twee merge-runs het per definitie oneens.
 
 ---
 
 ## Wat Claude doet
 
-- [ ] **1. Verversing afwachten en controleren.** Gestart 11:09 UTC, duurt ~6,5 uur.
+- [x] ~~**1. Verversing afwachten en controleren.** Gestart 11:09 UTC, duurt ~6,5 uur.
       Letten op: geen tracebacks, `clusters:`-regel met ~13.500 clusters,
       `segments.geojson:`-regel met een laag fallback-aandeel.
 
-- [ ] **2. Unit-bestanden installeren** (vergt `daemon-reload`, dus pas ná de
+- [x] ~~**2. Unit-bestanden installeren** (vergt `daemon-reload`, dus pas ná de
       verversing). Drie bestanden zijn gewijzigd:
       - `deploy/statisch-vernieuwen.timer` — wekelijks naar maandag 00:00
         Nederlandse tijd in plaats van 04:30 UTC
@@ -39,11 +68,11 @@ waarvoor het in augustus ontworpen is.
       - `deploy/aggregator-herstart.service` — `ExecCondition` die de nachtelijke
         herstart overslaat zolang de verversing draait
 
-- [ ] **3. Aggregator herstarten** na het installeren, zodat hij de nieuwe
+- [x] ~~**3. Aggregator herstarten** na het installeren, zodat hij de nieuwe
       `eva_stations.json` en `merged.duckdb` oppakt. Deze ene keer handmatig; vanaf
       volgende week doet de service het zelf.
 
-- [ ] **4. Nameten en rapporteren.** Verwacht: rechte-lijn-aandeel van 30,7 % naar
+- [x] ~~**4. Nameten en rapporteren**~~ ✅ *zie de tabel hierboven.* Oude tekst: Verwacht: rechte-lijn-aandeel van 30,7 % naar
       ~6 %, en 82,4 % van de Duitse stationsparen met echte spoorgeometrie in
       plaats van 2,3 %. Uitkomst verwerken in `docs/geheugen-op-1gb.md`.
 
@@ -61,7 +90,7 @@ waarvoor het in augustus ontworpen is.
 
 ## Wat jij doet
 
-### A. Controleren dat Actions het nu goed doet — mag nu
+### ~~A. Controleren dat Actions het nu goed doet~~ ✅ *gedaan 12 sep: 2.130 van 29.158 fallbacks (7,3 %), geen tracebacks, geen id-botsingen*
 
 De dagelijkse ETL draait vanzelf om 03:30 UTC, maar je kunt hem ook meteen
 starten: **Actions → dataset-etl → Run workflow**. Ik kan dat zelf niet; mijn

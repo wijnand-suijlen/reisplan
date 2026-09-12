@@ -1,7 +1,8 @@
 "use strict";
 /* Inspectiepagina: ruwe per-trein-data uit inspect/trains.json + inspect/details.json.
-   Eén 4-uursartefact (24 u paste niet in het servergeheugen); de vensters
-   (30 min/4 u) worden hier client-side gefilterd op last_ts.
+   Eén 2-uursartefact (24 u paste niet in het servergeheugen, 4 u dreef de
+   buildtijd over zijn timeout); de vensters (30 min/2 u) worden hier
+   client-side gefilterd op last_ts.
    Contract: docs/inspectie-schema.md. */
 
 const R2_BASE = "https://pub-2369cd93470e40528dc3aab9ab7fd5e7.r2.dev/";
@@ -34,7 +35,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
 
 let allTrains = [];          // rij-objecten uit trains.json
 let builtAt = null;          // Date van de laatste build (server)
-let windowS = 14400;
+let windowS = 7200;   // = WINDOW_S in inspection.py
 let sortKey = "delay_s";
 let sortDir = -1;            // -1 = aflopend
 let selectedKey = null;
@@ -87,7 +88,7 @@ function updateFreshness() {
   // dan lopen de vensters leeg (30 min als eerste)
   const stale = ageMin > 10;
   el("freshness").textContent =
-    `${allTrains.length} treinen (4 u) · gegevens ${ageMin} min oud` +
+    `${allTrains.length} treinen (2 u) · gegevens ${ageMin} min oud` +
     (stale ? " ⚠ verouderd — draait de aggregator?" : "");
   el("freshness").classList.toggle("stale", stale);
 }
@@ -294,7 +295,7 @@ async function fetchMapStatus() {
     const [, k, p90, n] = seg;
     parts.push(`<div><span class="dot" style="background:${SEVERITY_COLORS[k]}"></span>` +
       `kleurklasse ${k} · p90 opgelopen ${Math.round(p90 / 60)} min · ` +
-      `${n} trein(en), 30 min</div>`);
+      `${n} trein(en), 2 uur</div>`);
   } else {
     parts.push("<div><span class=\"dot\" style=\"background:#9a9a97\"></span>" +
       "geen kleurwaarneming (grijs op de kaart)</div>");

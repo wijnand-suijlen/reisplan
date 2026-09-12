@@ -191,7 +191,7 @@ function koppelTooltip() {
     const st = kaart.getFeatureState({ source: "segmenten", id: f.id });
     const detail = st.k === undefined
       ? `<span class="sub">geen recente waarneming</span>`
-      : `<span class="sub">p90 opgelopen: ${Math.round(st.p90 / 60)} min · ${st.n} trein(en), 30 min</span>`;
+      : `<span class="sub">p90 opgelopen: ${Math.round(st.p90 / 60)} min · ${st.n} trein(en), 2 uur</span>`;
     const versperd = st.blok ? `<div>🚫 versperd — treinen vallen hier uit</div>` : "";
     let werk = "";
     if (werkInfo.has(f.id)) {

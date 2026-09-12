@@ -14,9 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v10
 
       - name: Dependencies
         run: uv sync --all-packages
@@ -37,7 +37,7 @@ jobs:
         run: uv run maak-segmenten
 
       - name: Dataset publiceren als artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dataset
           path: |
@@ -46,7 +46,7 @@ jobs:
           retention-days: 14
 
       - name: Metingen publiceren (monitoring)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: metingen
           path: |

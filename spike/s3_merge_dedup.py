@@ -49,7 +49,13 @@ def meet(stap, metric, waarde, feed=""):
 
 def normaliseer_naam(naam: str) -> str:
     n = unicodedata.normalize("NFKD", naam or "").encode("ascii", "ignore").decode().lower()
-    n = re.sub(r"\b(centraal|central|hbf|hauptbahnhof|gare de|gare du|gare d'|station|bahnhof|railway station|sncb|sncf|cff|sbb)\b", " ", n)
+    # Landsuffix die één feed er wél achter zet en een andere niet: de NMBS-feed
+    # noemt Amsterdam Centraal "Amsterdam Cs (NL)" en Rotterdam Centraal
+    # "Rotterdam Centraal (NL)", de DB-feed schrijft "Bunde (D)". Zonder dit
+    # strippen matchen die nooit op naam en houd je twee clusters voor één
+    # station, 12 tot 59 m van elkaar (gemeten 12 sep 2026).
+    n = re.sub(r"\s*\(\s*(nl|be|b|de|d|fr|f|ch|lu|l)\s*\)\s*", " ", n)
+    n = re.sub(r"\b(centraal|central|cs|hbf|hauptbahnhof|gare de|gare du|gare d'|station|bahnhof|railway station|sncb|sncf|cff|sbb)\b", " ", n)
     n = re.sub(r"[^a-z0-9]+", " ", n).strip()
     return n
 
@@ -190,7 +196,11 @@ def cluster_stations(con, rows):
         if c["lat"] is not None:
             ankers[(round(c["lat"], 2), round(c["lon"], 2), normaliseer_naam(c["naam"]))].append(cid)
 
-    for sleutel, groep in grid.items():
+    # Gesorteerd, niet in dict-volgorde: zodra twee gridgroepen samengaan hangt het
+    # id van de samenvoeging af van welke groep het eerst langskwam. Sorteren maakt
+    # dat "de kleinste sleutel" en dus reproduceerbaar — zie stabiel_cluster_id.
+    naam_ankers: dict[tuple, str] = {}   # (cel, genormaliseerde naam) -> ronde-B-cluster
+    for sleutel, groep in sorted(grid.items()):
         lat0, lon0, nnaam = sleutel
         # match met bestaand UIC-cluster in buurcellen?
         kandidaat = None
@@ -200,11 +210,27 @@ def cluster_stations(con, rows):
                     c = clusters[cid]
                     if haversine_m(groep[0][3], groep[0][4], c["lat"], c["lon"]) <= 300:
                         kandidaat = cid
+        # ... en met een ronde-B-cluster van dezelfde naam in een buurcel. Zonder deze
+        # stap bleven twee gelijknamige stations die net een celgrens overschrijden
+        # gescheiden: Oberhausen Hbf stond er twee keer, 154 m uit elkaar (binnen de
+        # drempel van 300 m) maar in de cellen 51.47 en 51.48 (gemeten 12 sep 2026).
+        # De UIC-zoektocht hierboven keek alleen naar `ankers`, niet naar deze.
+        if kandidaat is None:
+            for dlat in (-0.01, 0, 0.01):
+                for dlon in (-0.01, 0, 0.01):
+                    cid = naam_ankers.get(((round(lat0 + dlat, 2), round(lon0 + dlon, 2)), nnaam))
+                    if cid and haversine_m(groep[0][3], groep[0][4],
+                                           clusters[cid]["lat"], clusters[cid]["lon"]) <= 300:
+                        kandidaat = cid
+                        break
+                if kandidaat:
+                    break
         if kandidaat is None:
             kandidaat = stabiel_cluster_id("grid", nnaam, f"{lat0:.2f}", f"{lon0:.2f}")
             if kandidaat in clusters:
                 raise SystemExit(f"cluster-id-botsing op {kandidaat} ({nnaam} {lat0},{lon0})")
             clusters[kandidaat] = {"uic": None, "naam": groep[0][2], "lat": groep[0][3], "lon": groep[0][4], "feeds": set()}
+            naam_ankers[((round(lat0, 2), round(lon0, 2)), nnaam)] = kandidaat
         for station_id, feed, naam, lat, lon in groep:
             if haversine_m(lat, lon, clusters[kandidaat]["lat"], clusters[kandidaat]["lon"]) <= 300 or clusters[kandidaat]["uic"] is None:
                 cluster_van[station_id] = kandidaat

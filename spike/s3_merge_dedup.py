@@ -47,8 +47,37 @@ def meet(stap, metric, waarde, feed=""):
         csv.writer(f).writerow([stap, feed, metric, waarde])
 
 
+# Naamvarianten die feeds voor hetzelfde station gebruiken. Afgeleid uit de 651
+# clusterparen die op 12 sep 2026 binnen 300 m van elkaar lagen met een andere
+# genormaliseerde naam — niet uit aannames. Bewust NIET opgenomen:
+#   * perroncodes "P1..P13" / "001..013": die zien eruit als perrons maar zijn
+#     opeenvolgende routepunten van de Harzer Schmalspurbahn, 145-258 m uit
+#     elkaar ("Ilfeld Tf_Etm 007 P7" + "... 008 P8"). Strippen zou twee echte
+#     locaties samenvoegen.
+#   * "Gare Routière": dat is het busstation naast het spoorstation (11-272 m).
+#     Wel of niet één cluster is een modelleerkeuze, geen naamvariant.
+SYNONIEMEN = {
+    # Franse/Engelse vormen die de NMBS- en SNCF-feeds voor NL/BE-stations gebruiken
+    "sarrebruck": "saarbrucken", "anvers": "antwerpen", "gand": "gent",
+    "bruges": "brugge", "centre": "centrum", "sud": "zuid", "nord": "noord",
+    "ouest": "west", "est": "oost", "suisse": "",
+    # afkortingen
+    "bf": "", "bhf": "", "st": "sankt", "s": "",
+}
+
+
 def normaliseer_naam(naam: str) -> str:
-    n = unicodedata.normalize("NFKD", naam or "").encode("ascii", "ignore").decode().lower()
+    # ß vóór de ASCII-fold, anders vált hij weg in plaats van te transcriberen:
+    # "Straße" werd "strae" en "Dußlingen" werd "dulingen", zodat geen enkele
+    # Duitse naam met ß ooit matchte op zijn ss-variant. db_timetables.norm_name
+    # doet dit al; deze functie deed het niet (gevonden 12 sep 2026).
+    naam = (naam or "").replace("ß", "ss").replace("ẞ", "ss")
+    n = unicodedata.normalize("NFKD", naam).encode("ascii", "ignore").decode().lower()
+    # "Bereich Gleis 7" is het perrongedeelte van één station, anders dan de
+    # "<naam> Gleis N"-halten op de smalspoorlijnen: alleen deze vorm strippen.
+    n = re.sub(r"\bbereich\s+gleis\s+[\d/]+", " ", n)
+    # "Kelterstr." en "Danziger Str." tegenover "-strasse"
+    n = re.sub(r"str\b", "strasse", n)
     # Landsuffix die één feed er wél achter zet en een andere niet: de NMBS-feed
     # noemt Amsterdam Centraal "Amsterdam Cs (NL)" en Rotterdam Centraal
     # "Rotterdam Centraal (NL)", de DB-feed schrijft "Bunde (D)". Zonder dit
@@ -57,6 +86,7 @@ def normaliseer_naam(naam: str) -> str:
     n = re.sub(r"\s*\(\s*(nl|be|b|de|d|fr|f|ch|lu|l)\s*\)\s*", " ", n)
     n = re.sub(r"\b(centraal|central|cs|hbf|hauptbahnhof|gare de|gare du|gare d'|station|bahnhof|railway station|sncb|sncf|cff|sbb)\b", " ", n)
     n = re.sub(r"[^a-z0-9]+", " ", n).strip()
+    n = " ".join(w for w in (SYNONIEMEN.get(t, t) for t in n.split()) if w)
     return n
 
 

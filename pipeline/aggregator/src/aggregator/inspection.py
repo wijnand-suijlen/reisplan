@@ -1,7 +1,7 @@
 """Inspection artifacts: per-train table and full-service details.
 
 Feeds the inspectie.html page next to the delay map. Every BUILD_INTERVAL_S the
-last 4h of stop_obs2 is aggregated into three static artifacts (contract:
+last WINDOW_S of stop_obs2 is aggregated into three static artifacts (contract:
 docs/inspectie-schema.md):
 
 - inspect/trains.json   one row per (country, trip_id, service_date), incl. trains
@@ -12,10 +12,12 @@ docs/inspectie-schema.md):
 - inspect/works.json    planned baseline closures per drawn edge (planned_closures
                         table from the weekly ETL; static per aggregator run)
 
-The client filters the 30min/4h windows itself on last_ts, so one 4h artifact
+The client filters the 30min/2h windows itself on last_ts, so one 2h artifact
 serves both. The window was 24h once; a full day of all-country data made the
 build's working set far exceed the 1 GB VM and every build thrashed swap for
-over an hour. Schedule metadata comes from merged.duckdb, through the connection
+over an hour. It was 4h until 12 sep 2026, when builds averaged 775s against an
+interval of 300s and half of them were killed on the 900s timeout — see
+docs/geheugen-op-1gb.md. Schedule metadata comes from merged.duckdb, through the connection
 the child process opens for itself. stop_obs2.trip_id is the raw RT id while merged
 trip_ids are feed-prefixed ("nl:123"), hence the explicit prefix in the join.
 DE trip_ids are IRIS labels ("ICE 228") that never match GTFS; those trains get
@@ -37,7 +39,7 @@ from .config import WEB_DATA, bronnen
 log = logging.getLogger("aggregator")
 
 BUILD_INTERVAL_S = 300
-WINDOW_S = 4 * 3600
+WINDOW_S = 2 * 3600
 SERVICE_DATE_DAYS_BACK = 2  # date floor keeps overnight trains with yesterday's service_date
 META_CACHE_MAX = 20_000
 

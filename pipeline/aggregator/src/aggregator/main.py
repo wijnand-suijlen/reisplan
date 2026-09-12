@@ -25,7 +25,14 @@ from .snapshot import bouw_snapshot, schrijf_snapshot
 from .statisch import Statisch
 
 log = logging.getLogger("aggregator")
+
 MAX_BACKOFF_S = 900
+# Venster waarover de baanvakkleuring de p90 bepaalt. Stond op 30 min; per
+# 12 sep 2026 op 2 uur, zodat bronnen die trager rondgaan dan een half uur ook
+# kleuren — de DE-bron doet één ronde langs zijn 409 stations per ~59 min.
+# Meting bij ochtendspits: 30 min = 57.274 obs over 4.632 segmenten,
+# 2 uur = 118.810 obs over 6.901 segmenten (+49 % gekleurde baanvakken).
+KLEUR_VENSTER_S = 2 * 3600
 
 
 class Bron:
@@ -167,7 +174,7 @@ def main() -> None:
             # per getekende rand aggregeren over álle segmenten die eroverheen lopen
             rand_deltas: dict[str, list] = {}
             rand_trips: dict[str, set] = {}
-            for segment, (deltas, trips) in opslag.venster_ruw(1800).items():
+            for segment, (deltas, trips) in opslag.venster_ruw(KLEUR_VENSTER_S).items():
                 for rand in statisch.randen(segment):
                     rand_deltas.setdefault(rand, []).extend(deltas)
                     rand_trips.setdefault(rand, set()).update(trips)

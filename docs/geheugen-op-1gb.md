@@ -408,17 +408,72 @@ de juiste vraag is welke post *groeit*.
 - Test zware DuckDB-wijzigingen lokaal met `REISPLAN_DUCKDB_MEM=600MB`; zonder
   limiet blijven deze bugs op de laptop onzichtbaar.
 
+## Ingrepen van 12 september 2026
+
+Na de meting hierboven doorgevoerd, op verzoek van de eigenaar:
+
+**Op de VM, buiten reisplan** — `systemctl disable --now`:
+
+| unit | RSS |
+|---|---|
+| `google-cloud-ops-agent` (+ fluent-bit, + otel-collector) | 86 M |
+| `google-osconfig-agent` | 16 M |
+| `exim4` (+ `exim4-base.timer`) | 7 M |
+
+Effect direct na de ingreep: beschikbaar geheugen **143 → 335 MB**, page cache
+210 → 280 MB, iowait van 53–90 % naar ~49 %. De guest-agent zelf
+(`core_plugin`, 42 M) blijft staan: die regelt SSH-sleutels en metadata, en
+uitzetten kan je buitensluiten. Terugdraaien is `systemctl enable --now` op
+dezelfde units; je verliest tot die tijd Cloud Monitoring/Logging, niet de lokale
+journal.
+
+**In de code** — twee vensters:
+
+- `WINDOW_S` in `inspection.py` van 4 naar 2 uur. Halveert de scan van de
+  inspectiebuild (~152k → ~76k rijen `seg_obs`) en daarmee de buildduur, die op
+  775 s gemiddeld zat tegen een interval van 300 s. De 4-uursknop op
+  `inspectie.html` is meegegaan naar 2 uur; het artefact bediende beide vensters.
+- `KLEUR_VENSTER_S` in `main.py` van 30 minuten naar 2 uur. Dit is géén
+  geheugenmaatregel — het kost ~11 MB extra transiënte piek per snapshot en
+  ongeveer twee keer zoveel rij-lookups per minuut. Het is een dekkingsmaatregel:
+  bij ochtendspits geeft 30 min 57.274 observaties over 4.632 segmenten en 2 uur
+  118.810 over 6.901 segmenten, dus **+49 % gekleurde baanvakken**. Dat raakt
+  vooral Duitsland, waar één ronde langs de 409 stations ~59 minuten kost en een
+  venster van een half uur dus principieel te kort is.
+
+Beide vensters staan nu op 2 uur, waardoor kaart en inspectiepagina hetzelfde
+tijdvak tonen.
+
 ## Nog open
 
-Op volgorde van wat de meting van 12 september aanwijst. Niets hiervan is
-geïmplementeerd; de eigenaar beslist wat er gebeurt.
+Op volgorde van wat de meting van 12 september aanwijst. De maatregelen hierboven
+zijn doorgevoerd; de rest niet — de eigenaar beslist wat er gebeurt.
+
+- **Meet na.** Bovenstaande ingrepen zijn niet in samenhang nagemeten: doe de
+  cadanstabel per taak opnieuw over een volledig etmaal en vergelijk. De
+  verwachting is dat de builds weer binnen hun timeout vallen; of dat klopt, en
+  wat het verruimde kleuringsvenster kost, is nog niet vastgesteld.
+- **De dekkende index op `seg_obs`.** `venster_ruw()` gebruikt nu `seg_obs_ts`,
+  een index op `ts` alleen, en doet daarna per rij een lookup buiten de index om:
+  bij een venster van 2 uur zijn dat ~119.000 random reads per minuut over een
+  bestand van 738 MB. Een index op `(ts, segment, delta_s, trip_id)` maakt die
+  query dekkend en haalt die lookups volledig weg — dat is de tegenhanger van het
+  verruimde venster. Aanmaken kost eenmalig een zware scan; plan dat bewust.
 
 - **De inspectiebuild is de bindende beperking.** 775 s gemiddeld tegen een
-  interval van 300 s, en de helft wordt gekild op de timeout van 900 s. Zolang dat
-  zo is, is elke andere taak op de VM daar een slachtoffer van. Drie richtingen:
-  het interval verhogen zodat er ruimte tussen de builds komt, de build zelf
-  goedkoper maken (`WINDOW_S` staat op 4 uur), of hem minder vaak draaien.
-  Meet eerst wáár die 775 s zitten — dat is niet gemeten.
+  interval van 300 s, en de helft wordt gekild op de timeout van 900 s. `WINDOW_S`
+  is daarom gehalveerd (zie hierboven); of dat genoeg is, moet de nameting
+  uitwijzen. Zo niet: interval verhogen, of de build van de box halen (zie
+  hieronder). Er is nog steeds niet gemeten wáár die 775 s precies in zitten.
+- **De timeout begrenst de wandkloktijd niet strak.** Er staan runs in het log met
+  `done in 989s` bij een `TIMEOUTS`-waarde van 900 s: `subprocess.run(timeout=…)`
+  bewaakt zijn eigen wachttijd, de gelogde duur meet een ruimere span. Reken er
+  niet op als harde bovengrens.
+- **De diagnostiek is zelf een slachtoffer.** Trap A haalt 49 % van zijn ritme en
+  trap B (`SIGUSR1`) kwam op 12 september in 30 minuten geen enkele keer aan bod:
+  `diagnostics.run_if_due()` staat in dezelfde lus achter de builds, en die liepen
+  onafgebroken. Zolang dat zo is, kun je het effect van elke maatregel hier niet
+  meer meten.
 - **De bodem stijgt nog steeds**, ook nu `de_plan` op zijn plateau zit: +23 en
   +12 MB op 10 en 11 september. Twee verdachten, in deze volgorde:
   `Opslag.venster_ruw()` trekt elke 60 s dertig minuten `seg_obs` in één

@@ -5,7 +5,7 @@ en de inspectiepagina (`web/vertragingskaart/inspectie.html`). Doel: de ruwe
 per-trein-data achter de vertragingskaart inzichtelijk maken om ogenschijnlijke
 tegenstrijdigheden op de kaart te kunnen herleiden.
 
-Elke **300 s** bouwt de aggregator uit de laatste **4 uur** observaties vier
+Elke **300 s** bouwt de aggregator uit de laatste **2 uur** observaties vier
 artefacten en uploadt ze naar R2 onder `inspect/` (gzip, `Cache-Control:
 max-age=60`); lokaal staan kopieën in `web/vertragingskaart/data/inspect/`.
 `trains.json` en `details.json` komen uit `stop_obs2` (observatielog, absolute
@@ -13,12 +13,14 @@ vertraging per stationscluster) plus `cancel_obs` (eerste waarneming van een
 annulering per trip/dienstdag/segment), `edges.json` uit `seg_obs` (opgelopen
 delta per baanvak-passage) en `cancel_obs`, `works.json` uit de
 `planned_closures`-tabel in merged.duckdb. De pagina filtert de vensters
-(30 min / 4 u) zelf: zonder baanvakfilter op `last_ts`, mét baanvakfilter
+(30 min / 2 u) zelf: zonder baanvakfilter op `last_ts`, mét baanvakfilter
 uitsluitend op de passage-/annulerings-ts uit `edges.json` — dezelfde
 selectieregel als de kaartkleur, zodat kaart en tabel dezelfde treinen tellen.
-Eén 4-uursartefact bedient beide vensters. Het venster was eerst 24 uur;
-dat paste qua geheugen niet op de e2-micro (1 GB) en dreef de buildtijd naar
-ruim een uur.
+Eén 2-uursartefact bedient beide vensters, en 2 uur is nu ook precies het venster
+waarop de kaart kleurt. Het venster was eerst 24 uur; dat paste qua geheugen niet
+op de e2-micro (1 GB) en dreef de buildtijd naar ruim een uur. Daarna 4 uur, tot
+12 september 2026: builds duurden toen gemiddeld 775 s tegen een interval van
+300 s en de helft sneuvelde op de timeout van 900 s (`docs/geheugen-op-1gb.md`).
 
 In baanvak-modus toont de pagina bovendien een blok **Kaartstatus** uit
 `snapshot.json` (hetzelfde bestand als de kaart leest): kleurklasse/p90,
@@ -28,7 +30,7 @@ de kaart er op dat moment van maakt.
 
 **Let op bij het duiden van "tegenstrijdigheden"**: de kaart kleurt op de p90
 van de *opgelopen* vertraging per baanvak (`seg_obs`, delta per segmentpassage,
-venster 30 min); deze artefacten tonen *absolute* vertraging per trein
+venster 2 uur); deze artefacten tonen *absolute* vertraging per trein
 (`stop_obs2`). Een trein met 40 min absolute vertraging die constant 40 min
 achter rijdt, loopt niets meer op en kleurt het baanvak dus niet rood. De
 volledige uitleg — passages vs. treinen, weging, bias — staat in
@@ -43,7 +45,7 @@ service_date):
 {
   "v": 1,
   "built_at": "2026-08-13T07:35:00Z",
-  "window_s": 14400,
+  "window_s": 7200,
   "cols": ["country", "trip_id", "service_date", "train_number", "route",
            "origin", "destination", "sched_dep", "sched_arr",
            "delay_s", "last_stop", "first_ts", "last_ts", "n_obs", "sched_known",
@@ -99,7 +101,7 @@ Sleutel: `"<country>|<trip_id>|<service_date>"` (trip_ids bevatten geen `|`).
 
 ```json
 {
-  "v": 1, "built_at": "2026-08-13T07:35:00Z", "window_s": 14400,
+  "v": 1, "built_at": "2026-08-13T07:35:00Z", "window_s": 7200,
   "trains": {
     "nl|366476450|20260811": {
       "sched_known": true,
@@ -133,7 +135,7 @@ reden:
 
 ```json
 {
-  "v": 1, "built_at": "2026-08-13T07:35:00Z", "window_s": 14400,
+  "v": 1, "built_at": "2026-08-13T07:35:00Z", "window_s": 7200,
   "edges": {
     "E1025057532-4335755650": [[412, 180, 1786514301], [87, 0, 1786514100]]
   },

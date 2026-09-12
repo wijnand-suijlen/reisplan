@@ -76,7 +76,8 @@ zijn: vóór de fix waren twee merge-runs het per definitie oneens.
       ~6 %, en 82,4 % van de Duitse stationsparen met echte spoorgeometrie in
       plaats van 2,3 %. Uitkomst verwerken in `docs/geheugen-op-1gb.md`.
 
-- [ ] **5. Cadansmeting over een etmaal** — of alle taken op de VM hun bedoelde
+- [ ] **5. Cadansmeting over een etmaal** (zondag 13 sep; de verversing van
+      zaterdag vervuilt een eerdere meting) — of alle taken op de VM hun bedoelde
       ritme halen na de ingrepen van vanochtend (agents uit, buildvenster
       gehalveerd, dekkende index). Kan pas zondag, want de verversing van vandaag
       vervuilt de meting.
@@ -92,6 +93,47 @@ zijn: vóór de fix waren twee merge-runs het per definitie oneens.
       handmatig teruggezet (16:04).
 
 ---
+
+## Tweede ronde, 12 september 16:00–18:00 UTC — **nog niet geverifieerd**
+
+Ná de uitrol hierboven is er nog aan de clustering en de workflows gewerkt. Die
+wijzigingen staan op `main` maar zijn op de VM **nog niet zichtbaar**: de kaart
+wordt alleen door de VM gepubliceerd, en die pakt nieuwe code pas op bij de
+wekelijkse verversing.
+
+| commit | wat |
+|---|---|
+| `18fb8ad` | pages: checkout v7, upload-pages-artifact v5, deploy-pages v5 — geverifieerd groen |
+| `f2df65d` | etl: checkout v7, upload-artifact v7, setup-uv **v10.1.0** — geverifieerd groen |
+| `a9e8948` | clusteringfout 1 en 2: gridcelgrens + landsuffix, 77 duplicaten weg |
+| `e2f5f3e` | synoniementabel + **ß-fold gerepareerd**, 33 duplicaten weg |
+
+- [ ] **7. Maandag 14 september na ~02:25 controleren of dit klopt op de kaart.**
+      De verversing start zondag 22:00 UTC (= maandag 00:00 lokaal) en publiceert
+      de nieuwe `segments.geojson` zodra de aggregator ná de mergefase opstart —
+      naar de fasetijden van 12 september rond 02:25 lokaal, klaar rond 04:25.
+      Wat er dan moet kloppen:
+
+      | meting | nu op de VM | verwacht |
+      |---|---|---|
+      | rechte-lijn-fallbacks | 2.130 van 29.158 (7,3 %) | ~1.738 van ~28.553 (**6,1 %**) |
+      | clusters | 13.515 | ~13.408 |
+      | clusterparen binnen 300 m | ~660 | ~627 |
+
+      Let ook op: tussen ~02:25 en ~04:25 draait de aggregator met de nieuwe
+      `merged.duckdb` maar nog de oude `eva_stations.json` (s10 draait in de
+      laatste fase). De Duitse dekking is in dat venster dun; dat hoort zo en de
+      afsluitende herstart dicht het.
+
+- [ ] **8. Kaartnamen nakijken.** Door de samenvoegingen is de overlevende
+      clusternaam soms de Franse: de tooltip gaat "Anvers-Central" tonen in plaats
+      van "Antwerpen-Centraal". De naam komt van het eerste station in de groep en
+      dat is willekeurig. Vraagt een voorkeursregel — bijvoorbeeld de naam uit de
+      feed van het land waar het station ligt — maar dat is een keuze, geen bug.
+
+- [ ] **9. `planned_closures` nakijken.** Stond na de uitrol op 12.375 rand-dag-
+      blokken tegen 3.255 lokaal. Als de kaart veel rode puntjeslijnen toont, is
+      dat het eerste om te onderzoeken. Geen bewijs dat het fout is.
 
 ## Wat jij doet
 

@@ -19,5 +19,9 @@ Type=oneshot
 # dat slot terugpakken en de merge laten mislukken. Sinds de verversing om
 # middernacht begint en ~6,5 uur duurt, overlapt 03:00 daar gegarandeerd mee.
 # ExecCondition slaat de unit schoon over (geen faalmelding) bij exit != 0.
-ExecCondition=/bin/sh -c '! /usr/bin/systemctl is-active --quiet reisplan-statisch.service'
+# Let op: `is-active --quiet` deugt hier niet. reisplan-statisch is Type=oneshot en
+# staat zijn hele looptijd op ActiveState=activating, niet active — `is-active`
+# geeft dan niet-nul, waardoor de negatie nul werd en de herstart juist doorging.
+# Getest op de draaiende verversing van 12 sep 2026.
+ExecCondition=/bin/sh -c 'case "$(/usr/bin/systemctl show -p ActiveState --value reisplan-statisch.service)" in active|activating|deactivating|reloading) exit 1 ;; esac'
 ExecStart=/usr/bin/systemctl restart reisplan-aggregator.service

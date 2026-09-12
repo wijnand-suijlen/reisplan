@@ -81,10 +81,15 @@ zijn: vóór de fix waren twee merge-runs het per definitie oneens.
       gehalveerd, dekkende index). Kan pas zondag, want de verversing van vandaag
       vervuilt de meting.
 
-- [ ] **6. Ná jouw stap B:** de dubbele upload uitzetten. `main.py` stuurt bij elke
-      aggregator-start `segments.geojson` naar R2. Zodra Actions publiceert zijn dat
-      twee schrijvers op één sleutel. Pas doen als de eerste Actions-publicatie
-      geslaagd is.
+- [x] ~~**6. De dubbele upload uitzetten**~~ ✅ *gedaan 12 sep, maar andersom dan
+      gepland.* Ik wilde de upload uit `main.py` halen; dat was verkeerd om.
+      `segments.geojson` moet passen bij de rand-id's in `snapshot.json`, en die komt
+      van de aggregator uit diens eigen `merged.duckdb`. Actions merged dagelijks, de
+      VM wekelijks — dus juist Actions moet de geojson niet publiceren. Bijkomend
+      argument dat pas bij de meting bleek: `aws s3 cp` comprimeert niet, dus Actions
+      zette er 9,8 MB neer waar de aggregator 1,9 MB gzipt met `ContentEncoding`.
+      `segments.geojson` is uit de R2-stap van `etl.yml` gehaald; de gzipte versie is
+      handmatig teruggezet (16:04).
 
 ---
 
@@ -106,7 +111,7 @@ Goed is M/N rond de 6 %. Ging het mis, dan staat er `16062 van 16062` zoals elke
 dag tot nu toe — of faalt de stap hard met "geen spoorgeometrie", wat betekent dat
 `randen.json.gz` niet in de checkout zit.
 
-### B. De R2-sleutels op GitHub zetten — **pas ná mijn stap 3**
+### ~~B. De R2-sleutels op GitHub zetten~~ ✅ *gedaan 12 sep; geverifieerd doordat `dataset.tar.zst` (35,4 MB) voor het eerst in R2 verscheen*
 
 GitHub → de repo → **Settings** → **Secrets and variables** → **Actions** →
 **New repository secret**. Vier keer, exact deze namen:
@@ -147,6 +152,15 @@ aggregator gewoon draaien.
 ### ~~D. De git-credential-keten rechtzetten~~ ✅ *gedaan 12 sep*
 
 ---
+
+## Eigendom van de R2-objecten, zoals het nu staat
+
+| object | eigenaar | waarom |
+|---|---|---|
+| `snapshot.json` | VM, elke minuut | enige bron |
+| `segments.geojson` | VM, bij aggregator-start | moet bij de snapshot passen; wordt gzipt |
+| `dataset.tar.zst` | Actions, dagelijks | de VM draait `s5_compress` niet |
+| `randen.json.gz` | de repo | traag bewegende invoer sinds `a58e199` |
 
 ## Later, niet urgent
 

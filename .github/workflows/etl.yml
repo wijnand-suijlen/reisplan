@@ -54,7 +54,14 @@ jobs:
             data/rapporten/
           retention-days: 14
 
-      - name: Upload naar R2 (alleen als secrets gezet zijn)
+      # Alleen de dataset. segments.geojson bewust NIET: dat bestand moet passen bij
+      # de rand-id's in snapshot.json, en die komt van de aggregator op de VM uit
+      # diens eigen merged.duckdb. Deze workflow merged dagelijks, de VM wekelijks;
+      # publiceren we hier de geojson, dan gaan de twee bestanden die de kijker
+      # samen gebruikt uiteenlopen. De aggregator uploadt hem zelf bij het opstarten,
+      # gzipt en met ContentEncoding (1,9 MB in plaats van de 9,8 MB die `aws s3 cp`
+      # er ongecomprimeerd van maakt). Zie docs/openstaand-uitrol.md.
+      - name: Dataset naar R2 (alleen als secrets gezet zijn)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
@@ -63,5 +70,3 @@ jobs:
         run: |
           if [ -z "$R2_ENDPOINT" ]; then echo "R2 niet geconfigureerd — overslaan"; exit 0; fi
           aws s3 cp data/export/dataset.tar.zst "s3://$R2_BUCKET/dataset.tar.zst" --endpoint-url "$R2_ENDPOINT"
-          aws s3 cp web/vertragingskaart/data/segments.geojson "s3://$R2_BUCKET/segments.geojson" \
-            --endpoint-url "$R2_ENDPOINT" --content-type application/geo+json --cache-control max-age=3600

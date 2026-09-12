@@ -16,7 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      # Exacte versie, geen zwevende major: astral-sh publiceert `vN`-tags alleen
+      # tot en met v7. `@v10` bestaat niet en liet de run falen op
+      # "unable to find version v10" (12 sep 2026). Bij een bump dus de
+      # tags-lijst controleren, niet de conventie van actions/* aannemen.
+      - uses: astral-sh/setup-uv@v10.1.0
 
       - name: Dependencies
         run: uv sync --all-packages

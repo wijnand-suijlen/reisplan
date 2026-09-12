@@ -24,7 +24,10 @@ permanent swapte en de vertragingskaart tot zestien minuten achterliep. Er waren
    uur van 2.012 naar 179.331 entries, zonder één daling in 264 metingen.
 
 Punt 1 en 2 zijn gerepareerd en brachten de p90 van de snapshotcadans van 487
-naar 106 seconden. Punt 3 staat nog open.
+naar 106 seconden. Punt 3 is gerepareerd in `215ddad` en **geverifieerd op 12
+september** (zie "Verificatie van de DE-plan-prune" hieronder): die container
+ratchet niet meer. De bodem stijgt desondanks door — er zat een tweede oorzaak
+onder, en die is nog open.
 
 ## Symptomen
 
@@ -64,7 +67,50 @@ diag: rss=273M swap=33M | glibc arena=88M live=30M free=57M
 ```
 
 Triggeren: `pkill -USR1 -f "bin/aggregator$"`. Het `$`-anker is essentieel,
-anders raak je de `uv run`-parent, die op SIGUSR1 termineert.
+anders raak je de `uv run`-parent, die op SIGUSR1 termineert. De dump zelf kost
+~4 s, maar staat achter de builds in de rij: reken op minuten waarin het proces
+in D-state staat en niets logt. Dat is geen storing.
+
+### Meten vanaf de laptop
+
+```
+ssh -F ~/.config/reisplan/ssh/config google_micro '<commando>'
+```
+
+Precies die vorm. Kaal `ssh google_micro` werkt niet vanuit de sandbox: `~/.ssh`
+staat in `denyRead`, dus de alias lost niet op, en de permissieregel staat alleen
+`Bash(ssh -F ~/.config/reisplan/ssh/config *)` toe. De config wijst naar een eigen
+key en regelt zelf een proxytunnel (`~/.config/reisplan/ssh/proxytunnel.py`), want
+de sandbox laat geen directe sockets naar buiten. Pushen naar GitHub kan niet
+vanuit de sandbox — die key ligt bewust in `~/.ssh`; commit gerust en vraag de
+eigenaar te pushen.
+
+De reeksen waar de analyses in dit document op rusten:
+
+```
+# geheugen en cache-tellers
+journalctl -u reisplan-aggregator --since "<start>" --no-pager -o short-iso | grep "diag: rss="
+# cadans per taak
+journalctl -u reisplan-aggregator --since "<start>" --no-pager -o short-iso \
+  | grep -E "INFO snapshot:|(nl|fr|be|ch): [0-9]+ segment-obs|de: [0-9]+ stations"
+# builds en hun timeouts
+journalctl -u reisplan-aggregator --since "<start>" --no-pager \
+  | grep -E "job (inspection|archive): (done in|killed after)"
+# fouten
+journalctl -u reisplan-aggregator --since "<start>" --no-pager \
+  | grep -E "exited [0-9]|killed after|Traceback|diag: .*failed|poll mislukt|poll failed"
+```
+
+Twee valkuilen bij het lezen. Een herstart zet alle tellers op nul, dus alleen het
+verloop telt, nooit de startwaarde — controleer met `systemctl show -p
+ActiveEnterTimestamp` of de reeks één procesleven beslaat. En de diag-regel komt
+elke 600 s maar staat achter de builds in dezelfde lus, dus de samples liggen
+onregelmatig: reken met tijdstempels, niet met sample-indexen.
+
+Draai geen zware ad-hocquery's op `observaties.sqlite` op de VM zelf. Een
+`GROUP BY` over de hele tabel liep daar op 12 september minutenlang in D-state en
+drukte de aggregator meetbaar in; haal het bestand op of werk met de snapshots
+onder `data/rt-archief/snapshots/`.
 
 ## Zes hypotheses, in volgorde
 
@@ -146,6 +192,153 @@ maar die werden aangezien voor churn van de bouwlus.
 Over de laatste 48 uur: 2.345 snapshots, 286 inspectiebuilds, 45 archiefruns,
 nul fouten of tracebacks. De p50 staat op 61 seconden — de bedoelde cadans.
 
+Dat resultaat heeft niet standgehouden. Zie "Waar het elf dagen later staat".
+
+## Verificatie van de DE-plan-prune
+
+Gemeten 12 september 2026 op de run die sinds 7 september 08:10 UTC draait
+(430 diag-samples). `de_plan` laat nu de zaagtand zien die de fix moest opleveren:
+
+| middernacht Europe/Berlin | piek | dal |
+|---|---|---|
+| 8 sep 21:59 | 161.038 | 93.401 |
+| 9 sep 22:06 | 184.645 | 92.490 |
+| 10 sep 22:08 | 182.619 | 91.567 |
+| 11 sep 22:14 | 181.843 | 92.126 |
+
+Drie identieke cycli op rij: piek ~183k, dal ~92k, dat is de bedoelde retentie van
+twee dienstdagen (~90k entries per dienstdag). Vergelijk de 48 uur vóór de fix:
+2.012 → 179.331 met **nul** dalingen in 264 metingen. De prune grijpt, op het
+juiste moment, en ruimt precies één dienstdag op.
+
+Een tussenmeting op 2 september, 39 uur na de herstart, liet één daling zien
+(1 sep 22:07, −17.577) en gaf toen nog géén uitsluitsel: de eerste middernacht
+ruimde alleen de halve eerste dag op, dus de teller vulde nog naar zijn plafond.
+Dat is de reden dat deze toets dagen kost en niet uren.
+
+**Maar de bodem is niet vlak.** Minimum van `rss+swap` in het venster
+08:00–11:00 UTC:
+
+| dag | min | mediaan |
+|---|---|---|
+| 8 sep | 411 M | 446 M |
+| 9 sep | 444 M | 480 M |
+| 10 sep | 467 M | 487 M |
+| 11 sep | 479 M | 498 M |
+
++33, +23, +12 MB per etmaal. De stijging remt af, maar `de_plan` zat vanaf
+9 september al op zijn plafond en verklaart de laatste twee stappen dus niet meer.
+Dit is uitkomst 2 van de verificatie: **plateau, tweede oorzaak eronder.**
+
+Wat de heap dump van 2 september daarover zei — `de.plan` is niet de grootste post:
+
+| cache | len | deep |
+|---|---|---|
+| `opslag._laatste_seg` | 234.105 | ~56 M |
+| `statisch.segment_randen` | 30.719 | ~39 M |
+| `opslag._laatste` | 4 | ~24 M |
+| `de.plan` | 404 | ~19 M |
+| `de.trip_paths` | 13.274 | ~16 M |
+| `statisch._adjacency` | 13.515 | ~12 M |
+
+`de.plan` kost 0,145 KB per entry, identiek aan de meting van 30 augustus
+(~26 M bij 179.331 entries) — lineair, geen verrassing per entry. De verdachten
+voor de resterende stijging staan onder "Nog open".
+
+## Waar het elf dagen later staat
+
+Gemeten over het etmaal 11 september 06:00 – 12 september 06:00 UTC. Per taak het
+bedoelde ritme tegen het werkelijke:
+
+| taak | bedoeld | n per etmaal | verwacht | gehaald | p50 | p90 | max |
+|---|---|---|---|---|---|---|---|
+| snapshot | 60 s | 669 | 1440 | **46 %** | 61 s | 304 s | 3829 s |
+| nl-poll | 60 s | 590 | 1440 | **41 %** | 64 s | 340 s | 3348 s |
+| be-poll | 60 s | 569 | 1440 | **40 %** | 64 s | 387 s | 4785 s |
+| fr-poll | 120 s | 350 | 720 | **49 %** | 125 s | 656 s | 3318 s |
+| ch-poll | 90 s | 396 | 960 | **41 %** | 99 s | 657 s | 3366 s |
+| de-tick | 10 s | 2638 | 8640 | **31 %** | 12 s | 22 s | 3827 s |
+| ns-storingen | 300 s | 150 | 288 | 52 % | 312 s | 1083 s | 3917 s |
+| sncf-storingen | 600 s | 79 | 144 | 55 % | 1150 s | 1479 s | 4367 s |
+| inspectiebuild | 300 s | 35 | ~147 | **24 %** | 1186 s | 5038 s | 13154 s |
+| archiefrun | 3600 s | 19 | ~23 | 83 % | 4012 s | 4732 s | 11347 s |
+| diag-sample | 600 s | 70 | 144 | 49 % | 1233 s | 1464 s | 4881 s |
+
+De intervallen van de twee builds worden vanaf het *einde* van de vorige run
+gestempeld, dus hun bedoelde aantal is `86400 / (interval + buildduur)`; voor de
+inspectie is dat gerekend met de 289 s die eind augustus normaal was.
+
+**Geen enkele taak haalt zijn ritme.** De p50 ziet er voor de pollers nog gezond
+uit — de helft van de cycli loopt op tijd — maar de staart vreet het etmaal op:
+van de 24 uur zit 13,7 uur in gaten groter dan de bedoelde 60 seconden, en 68
+gaten van meer dan 300 seconden zijn samen goed voor 13,6 uur.
+
+De DE-bron is het ergst af, en dat verklaart de lege Duitse kaart: 9.910
+stationpolls per etmaal over 409 stations is **één ronde per 59 minuten**, terwijl
+tier A elke 300 s en tier B elke 1500 s bedoeld is. De groene basislijn voor
+Duitsland wordt gesynthetiseerd voor stops met een geplande tijd binnen
+`EVENT_WINDOW_PAST_S` = 2700 s (45 minuten). Een ronde van 59 minuten is langer
+dan dat venster, dus een deel van de Duitse stops wordt structureel nooit
+waargenomen — niet vertraagd, niet op tijd, helemaal niet. Dekking op de kaart,
+gemeten tegen de segmentgeometrie:
+
+| land | baanvakken | in snapshot | dekking |
+|---|---|---|---|
+| **de** | **21.252** | **679** | **3,2 %** |
+| nl | 4.126 | 721 | 17,5 % |
+| be | 1.603 | 652 | 40,7 % |
+| fr | 4.883 | 2.394 | 49,0 % |
+| ch | 6.627 | 2.047 | 30,9 % |
+
+(Landtoewijzing via ruwe bounding boxes op het middelpunt van elk baanvak, met
+NL, BE en CH uitgesneden vóór DE; grensgebieden en Oostenrijk vallen daardoor een
+enkele keer verkeerd. Voor ordes van grootte is dat ruim genoeg.)
+
+Duitsland is 54 % van alle baanvakken op de kaart. Dit is géén regressie van
+`215ddad`: archiefsnapshots van rond 05:20 UTC geven 2,6 % op 15 augustus, 3,3 %
+op 29 augustus, 3,7 % op 2 september en 3,6 % nu. De DB Timetables-API is
+station-bemonstering, geen landelijke feed — 409 sample­punten kunnen 21.252
+baanvakken niet dekken zoals FR en CH dat doen. De API-limiet knelt daarbij niet:
+`REQUEST_BUDGET_PER_MIN` staat op 45 en het feitelijke verbruik is naar schatting
+~15/min. Wat knelt is dat de hoofdlus de DE-bron nog maar eens per ~38 s een slot
+geeft in plaats van de bedoelde 10 s.
+
+### De oorzaak van de vertraging: de inspectiebuild, en swap
+
+De inspectiebuild is uit zijn budget gegroeid. In het etmaal:
+
+- 35 builds **voltooid**, gemiddeld 775 s (was 289 s eind augustus)
+- 35 builds **gekild op de timeout van 900 s** (`TIMEOUTS` in `jobs.py`)
+- 1 archiefrun gekild op 3600 s
+
+De helft van al het inspectiewerk wordt dus weggegooid en 300 s later opnieuw
+begonnen. Inclusief de gekilde runs zit ~18 van de 24 uur in builds: een duty
+cycle van ~75 %, tegen de 52 % waarop het onderzoek in augustus eindigde.
+
+En daaronder: de machine wacht op schijf, niet op rekenkracht.
+
+```
+load average: 4,26  (2 vCPU)
+vmstat:  us 1-3 %   sy 2-3 %   id 6-41 %   wa 53-90 %
+free:    969 M totaal, 76 M vrij, 702 M swap in gebruik
+```
+
+53 tot 90 procent iowait bij 5 procent CPU-gebruik. Het is swap-thrash, precies
+het beeld van eind augustus — alleen nu met een andere verdeling:
+
+| | RSS | swap | totaal |
+|---|---|---|---|
+| aggregator (ouder) | 193 M | 319 M | 512 M |
+| inspectie-kind (lopend) | 233 M | 23 M | 256 M |
+| Google-agents (otelopscol, guest-agent, osconfig) | ~135 M | — | ~135 M |
+
+512 + 256 + 135 = 903 M op een machine met 969 M. Er is geen ruimte: elke build
+duwt de ouder de swap in, de ouder komt er traag weer uit, de build duurt daardoor
+langer, en de volgende build staat al klaar. Dat is de terugkoppeling die alle elf
+taken tegelijk onder hun ritme houdt.
+
+Merk op dat de Google-agents ~14 % van het werkgeheugen opeisen voor telemetrie.
+
 ## Lessen
 
 **1. Meet eerst, repareer daarna.** Vier van de zes hypotheses vielen om, en
@@ -217,13 +410,38 @@ de juiste vraag is welke post *groeit*.
 
 ## Nog open
 
-- **De DE-plan-prune.** Plan-entries dateren via hun slice — de sleutel van
-  `plan_slices` bevat al datum en uur — en ze met diezelfde TTL laten verlopen.
-  Dat is de enige wijziging die de resterende ratchet raakt.
-- **Daarna opnieuw 48 uur meten**, met dezelfde bodemvergelijking. Zonder die
-  herhaling weten we niet of het lek gedicht is of dat er een tweede onder zat.
+Op volgorde van wat de meting van 12 september aanwijst. Niets hiervan is
+geïmplementeerd; de eigenaar beslist wat er gebeurt.
+
+- **De inspectiebuild is de bindende beperking.** 775 s gemiddeld tegen een
+  interval van 300 s, en de helft wordt gekild op de timeout van 900 s. Zolang dat
+  zo is, is elke andere taak op de VM daar een slachtoffer van. Drie richtingen:
+  het interval verhogen zodat er ruimte tussen de builds komt, de build zelf
+  goedkoper maken (`WINDOW_S` staat op 4 uur), of hem minder vaak draaien.
+  Meet eerst wáár die 775 s zitten — dat is niet gemeten.
+- **De bodem stijgt nog steeds**, ook nu `de_plan` op zijn plateau zit: +23 en
+  +12 MB op 10 en 11 september. Twee verdachten, in deze volgorde:
+  `Opslag.venster_ruw()` trekt elke 60 s dertig minuten `seg_obs` in één
+  `fetchall()`; en `opslag._laatste_seg` is met ~56 MB de grootste post in de heap
+  dump en schommelt tussen 130k en 500k entries, met 65 waarschuwingen
+  "dedup-cache boven 500000 na pruning" in 39 uur. Streamen in plaats van
+  fetchall zou de eerste wegnemen.
+- **De Duitse kaart is dun en dat is structureel.** 3,2 % dekking over 54 % van
+  alle baanvakken. De rondetijd (59 min) moet onder `EVENT_WINDOW_PAST_S`
+  (45 min) komen wil de groene basislijn überhaupt sluiten. `BATCH_SIZE` staat op
+  4 en het API-budget is voor tweederde onbenut, dus daar zit de goedkoopste
+  winst — maar pas nadat de hoofdlus weer lucht heeft, want de DE-bron krijgt nu
+  eens per 38 s een slot in plaats van elke 10 s. Fundamenteel blijven 409
+  sample­punten te weinig voor 21.252 baanvakken; vol kleuren vraagt een andere
+  bron.
+- **De vangnetten die er al zijn.** Een nachtelijke herstart (`RuntimeMaxSec` op
+  de unit) is veilig — `_warm_caches()` in `opslag.py` dekt dat af — maar maskeert
+  het probleem. De Google-agents (otelopscol en verwanten) kosten ~135 MB, 14 %
+  van de machine, voor telemetrie die dit project niet gebruikt.
 - **Van de lijst af:** het allocator-experiment. `MALLOC_ARENA_MAX` en
-  `malloc_trim` hebben hier aantoonbaar niets te halen.
+  `malloc_trim` hebben hier aantoonbaar niets te halen. En de DE-plan-prune zelf:
+  die is geverifieerd en werkt.
 - **Op termijn:** het feedvolume groeit — NL verdubbelde in twee dagen van 40.000
   naar 90.000 segment-observaties per poll. Zet dat door, dan is niet het lek de
-  bindende beperking maar de machine.
+  bindende beperking maar de machine. De meting van 12 september laat zien dat
+  dat punt al bereikt is: geen enkele taak haalt nog zijn bedoelde ritme.

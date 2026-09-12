@@ -90,9 +90,12 @@ fragmentatie, per-thread arena's, jemalloc in DuckDB, en daarmee ook het nut van
 `malloc_trim` en `MALLOC_ARENA_MAX` — plus hoe je meet (`diagnostics.py`: trap A
 elke 10 min, `SIGUSR1` voor een heap dump) en waarom je bodems tussen dagen moet
 vergelijken in plaats van hellingen binnen één dagdeel. De laatste onbegrensde
-container (`plan` in `db_timetables.py`) is gerepareerd in `215ddad`; **die fix
-wacht nog op verificatie — zie `docs/openstaand-de-plan-verificatie.md` voor de
-meting, de referentiegetallen en wat de uitkomsten betekenen.**
+container (`plan` in `db_timetables.py`) is gerepareerd in `215ddad` en op
+12 september geverifieerd: die ratchet is weg. **De VM haalt sinds die meting
+geen enkele taak meer op zijn bedoelde ritme** — snapshots op 46 %, de DE-bron op
+31 %, en de helft van de inspectiebuilds wordt gekild op zijn timeout van 900 s.
+Het rapport bevat de tabel per taak, de oorzaak (swap-thrash, 53–90 % iowait) en
+wat er nog open staat. Lees dat vóór je hier aan performance of geheugen werkt.
 
 Nog open (zie PLAN.md voor de uitwerking):
 

@@ -9,3 +9,6 @@ __pycache__/
 .DS_Store
 *.swp
 *.swo
+
+# persoonlijke Claude Code-config (tokens, permissies) — niet delen
+.claude/settings.local.json

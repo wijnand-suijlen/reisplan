@@ -55,6 +55,17 @@ class Opslag:
             """CREATE TABLE IF NOT EXISTS seg_obs (
                  ts INT, land TEXT, segment TEXT, trip_id TEXT, delta_s INT);
                CREATE INDEX IF NOT EXISTS seg_obs_ts ON seg_obs (ts);
+               -- Dekkende index voor de twee seg_obs-leesqueries: venster_ruw()
+               -- elke 60 s en de seg-warming bij het opstarten. Beide filteren op
+               -- ts en lezen daarna alleen kolommen die hier al in staan, dus ze
+               -- draaien index-only. Zonder dit deed venster_ruw() per rij een
+               -- lookup in de tabel: bij het venster van 2 uur ~119.000 random
+               -- reads per minuut over een bestand van 738 MB, op een machine met
+               -- ~230 MB page cache. De index bevat alle kolommen van de tabel,
+               -- maar ts loopt monotoon op, dus inserts blijven rechts aanschuiven
+               -- en kosten geen random writes. Zie docs/geheugen-op-1gb.md.
+               CREATE INDEX IF NOT EXISTS seg_obs_venster
+                 ON seg_obs (ts, segment, delta_s, trip_id, land);
                CREATE TABLE IF NOT EXISTS stop_obs (
                  ts INT, land TEXT, trip_id TEXT, cluster TEXT, delay_s INT,
                  PRIMARY KEY (land, trip_id, cluster));

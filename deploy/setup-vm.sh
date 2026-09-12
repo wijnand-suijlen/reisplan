@@ -43,8 +43,12 @@ sed "s|@REPO@|$REPO_DIR|g; s|@USER@|$USER|g; s|@UV@|$(command -v uv)|g" \
 sed "s|@REPO@|$REPO_DIR|g; s|@USER@|$USER|g; s|@UV@|$(command -v uv)|g" \
   deploy/statisch-vernieuwen.service | sudo tee /etc/systemd/system/reisplan-statisch.service >/dev/null
 sudo cp deploy/statisch-vernieuwen.timer /etc/systemd/system/reisplan-statisch.timer
+sed "s|@REPO@|$REPO_DIR|g" \
+  deploy/aggregator-herstart.service | sudo tee /etc/systemd/system/reisplan-aggregator-herstart.service >/dev/null
+sudo cp deploy/aggregator-herstart.timer /etc/systemd/system/reisplan-aggregator-herstart.timer
 sudo systemctl daemon-reload
-sudo systemctl enable --now reisplan-aggregator.service reisplan-statisch.timer
+sudo systemctl enable --now reisplan-aggregator.service reisplan-statisch.timer \
+  reisplan-aggregator-herstart.timer
 
 echo "== Klaar. Status: =="
 systemctl --no-pager status reisplan-aggregator.service | head -5

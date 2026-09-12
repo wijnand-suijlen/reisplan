@@ -1,0 +1,16 @@
+[Unit]
+# Nachtelijke herstart van de aggregator. Geen reparatie maar onderhoud: Python's
+# obmalloc geeft een arena van 1 MB alleen terug aan het OS als die helemaal leeg
+# is, en bij de churn van de pollus blijven arena's half gevuld achter. Gemeten
+# 2 sep 2026: 290 arena's = 304 MB gereserveerd tegen 188 MB in levende blokken,
+# dus ~116 MB slack die alleen een herstart opruimt. Zie docs/geheugen-op-1gb.md.
+#
+# Veilig omdat Opslag._warm_caches() de dedup-state uit de database terughaalt;
+# zonder die warming zou de eerste poll na een herstart de hele dienstdag opnieuw
+# loggen met ts=now. Kost wel ~3 minuten opstarttijd (172 s gemeten), vandaar 03:00.
+Description=Reisplan-aggregator nachtelijk herstarten (arena-slack opruimen)
+Documentation=file://@REPO@/docs/geheugen-op-1gb.md
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl restart reisplan-aggregator.service

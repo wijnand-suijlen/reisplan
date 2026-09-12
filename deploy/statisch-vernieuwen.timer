@@ -2,7 +2,12 @@
 Description=Wekelijks de statische reisplan-data vernieuwen
 
 [Timer]
-OnCalendar=Mon 04:30 UTC
+# Nederlandse tijd, niet UTC: de verversing moet klaar zijn voor de maandagse
+# ochtendspits, en dat is een lokaal begrip. De zone staat expliciet zodat het
+# over de zomertijdgrens heen middernacht blijft (22:00 UTC in de zomer, 23:00
+# in de winter). systemd >= 250 vereist; de VM draait 252.
+# Stond tot 12 sep 2026 op Mon 04:30 UTC = 06:30 lokaal, dus midden in de spits.
+OnCalendar=Mon 00:00 Europe/Amsterdam
 RandomizedDelaySec=15m
 Persistent=true
 

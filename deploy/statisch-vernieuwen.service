@@ -17,4 +17,9 @@ ExecStart=+/usr/bin/systemctl stop reisplan-aggregator.service
 ExecStart=/bin/bash @REPO@/deploy/vernieuw.sh merge
 ExecStart=+/usr/bin/systemctl start reisplan-aggregator.service
 ExecStart=/bin/bash @REPO@/deploy/vernieuw.sh na
+# s10 schrijft in de na-fase een nieuwe eva_stations.json, en die is gesleuteld op
+# cluster_id. De aggregator leest dat bestand alleen bij het opstarten
+# (db_timetables._load_stations), dus zonder deze herstart pollt de DE-bron tot de
+# eerstvolgende herstart met stations die naar oude cluster-id's wijzen.
+ExecStart=+/usr/bin/systemctl restart reisplan-aggregator.service
 ExecStopPost=+/usr/bin/systemctl start reisplan-aggregator.service

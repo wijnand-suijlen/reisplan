@@ -28,7 +28,7 @@ De feed ziet in beide gevallen precies hetzelfde: één sprong Schiphol → Rott
 zonder tussenstops. Er is geen veld, geen tag en geen rijtijd waarmee je kunt zien
 welke van de twee lijnen gereden is.
 
-Dit is exact het defect dat in `docs/openstaand-uitrol.md` staat: `bouw_verfijning`
+Dit is exact het defect dat in `docs/lijnvoering.md` staat: `bouw_verfijning`
 legt Schiphol–Rotterdam op de Oude Lijn (39 van 39 randen gekleurd) in plaats van
 op de HSL (2 van 5). Dat is vandaag fout. Het is in 2028 **112 dagen lang goed.**
 
@@ -244,7 +244,7 @@ passeert Leiden zonder te stoppen), de rijtijd nauwelijks (een omleiding kost 30
 60 minuten, wat binnen de spreiding van een nachttrein valt), en de
 infrastructuurtags helemaal niet. `shapes.txt` wordt per dienstregelingsversie
 opnieuw gepubliceerd en volgt de omleiding dus wél. Dat verschuift de
-shape-integratie uit `docs/openstaand-uitrol.md` van "verfijning voor NL en DE"
+shape-integratie uit `docs/lijnvoering.md` van "verfijning voor NL en DE"
 naar **de enige aanpak die principieel klopt**.
 
 **3. Voor de feeds zonder shapes blijft het een schatting.** Van de zeven feeds

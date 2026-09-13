@@ -9,6 +9,17 @@
 | `reisplan-aggregator.service` | pollt de feeds, schrijft snapshot naar R2, verzamelt punctualiteitsdata | continu; herstart vanzelf na crash of reboot |
 | `reisplan-statisch.timer` → `.service` | dataverversing via `deploy/vernieuw.sh`: **git pull**, uv sync, feeds → filter → merge → segmenten. De aggregator wordt alléén tijdens de merge-fase gestopt (de kaart is dan even zonder verse data) en daarna automatisch weer gestart — ook als de verversing halverwege faalt | elke maandag ~04:30 UTC |
 
+## Wie schrijft wat naar R2
+
+*Stand 12 september 2026.*
+
+| object | eigenaar | waarom |
+|---|---|---|
+| `snapshot.json` | VM, elke minuut | enige bron |
+| `segments.geojson` | VM, bij aggregator-start | moet bij de snapshot passen; wordt gzipt |
+| `dataset.tar.zst` | Actions, dagelijks | de VM draait `s5_compress` niet |
+| `randen.json.gz` | de repo | traag bewegende invoer sinds `a58e199` |
+
 ## Dagelijkse kost
 
 ```bash

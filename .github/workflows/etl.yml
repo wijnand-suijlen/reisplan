@@ -64,7 +64,7 @@ jobs:
       # publiceren we hier de geojson, dan gaan de twee bestanden die de kijker
       # samen gebruikt uiteenlopen. De aggregator uploadt hem zelf bij het opstarten,
       # gzipt en met ContentEncoding (1,9 MB in plaats van de 9,8 MB die `aws s3 cp`
-      # er ongecomprimeerd van maakt). Zie docs/openstaand-uitrol.md.
+      # er ongecomprimeerd van maakt). Zie docs/verslag-2026-09-12.md.
       - name: Dataset naar R2 (alleen als secrets gezet zijn)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

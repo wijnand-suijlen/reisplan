@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Projectstatus
 
-> **Er staat werk open.** `docs/openstaand-uitrol.md` is de actuele werklijst:
-> wat Claude nog moet doen, wat de eigenaar moet doen (o.a. R2-secrets op GitHub
-> zetten) en in welke volgorde. Lees dat bestand aan het begin van een sessie en
-> verwijder het pas als alles afgevinkt is.
+> **Werklijst.** `docs/werklijst.md` is de doorlopende lijst van wat openstaat:
+> wat Claude moet doen, welke beslissingen bij de eigenaar liggen, en wat aan een
+> datum vastzit. Lees die aan het begin van een sessie. Afgerond werk gaat eruit en
+> komt in een verslag (`docs/verslag-<datum>.md`); analyses horen in `PLAN.md` of
+> in een eigen document onder `docs/`, niet in de werklijst.
 
 **Planningsfase — er wordt nog niet geprogrammeerd.** De eigenaar werkt het ontwerp eerst samen met Claude uit. Begin niet met implementeren zonder expliciete opdracht. Build-, test- en lint-commando's worden hier aangevuld zodra de techstack gekozen is.
 

@@ -82,6 +82,25 @@ zijn: vóór de fix waren twee merge-runs het per definitie oneens.
       gehalveerd, dekkende index). Kan pas zondag, want de verversing van vandaag
       vervuilt de meting.
 
+      **Dit kan uit het R2-archief, niet op de VM** (gevonden 13 sep bij de
+      Cléon-casus). De `ts`-kolom in `rt-archive/stops/<dag>.parquet` geeft de
+      snapshotmomenten; met `lag()` per land krijg je de intervallen over een heel
+      etmaal zonder de aggregator te knijpen. Eerste blik op 12 september:
+
+      | land | snapshots | mediaan | p90 | grootste gat |
+      |---|---|---|---|---|
+      | de | 4.776 | 11 s | 22 s | 8.600 s |
+      | nl | 1.059 | 63 s | 209 s | 8.544 s |
+      | be | 810 | 63 s | 84 s | 8.771 s |
+      | ch | 742 | 93 s | 147 s | 8.682 s |
+      | fr | 566 | 123 s | 189 s | 5.537 s |
+
+      Acht gaten boven de 30 minuten op één dag, met uitschieters van ruim twee
+      uur. Let op de beperking: een `ts` verschijnt alleen als er íets veranderde,
+      dus dit is een **ondergrens** voor de cadans, geen meting van het pollritme
+      zelf. Voor de echte vraag — haalt elke taak zijn bedoelde ritme — is dit
+      genoeg om de uitschieters te vinden, en pas daarna is de VM nodig.
+
 - [x] ~~**6. De dubbele upload uitzetten**~~ ✅ *gedaan 12 sep, maar andersom dan
       gepland.* Ik wilde de upload uit `main.py` halen; dat was verkeerd om.
       `segments.geojson` moet passen bij de rand-id's in `snapshot.json`, en die komt
@@ -486,6 +505,23 @@ van anderhalf uur.
 Kleiner, uit dezelfde casus: **er is geen alertarchief.** `alerts` en
 `disruptions_sncf` gaan alleen naar de snapshot, niet naar `rt-archive/`, dus de
 tekstuele verklaring van de vervoerder is achteraf niet meer op te halen.
+
+## Twee omleidingen op komst: gratis validatie
+
+Uit `docs/hsl-omleidingen.md`, met data die binnen deze planhorizon vallen. Beide
+zijn een kosteloze toets op de stelling dat een omleiding onzichtbaar is in de
+stops, en op het gat in `blockades.py` hierboven.
+
+- **LGV Nord, 14 september – 25 oktober 2026**: treinen tussen Lille en Arras
+  deels over de klassieke lijn; op **3 en 4 oktober** volledige onderbreking,
+  alles inclusief Eurostar over klassiek spoor. Begint morgen.
+- **NBS Nürnberg – Ingolstadt, 31 oktober – 11 december 2026**: volledig dicht,
+  omleiding via de Altmühltalbahn en Treuchtlingen, +45 min.
+
+De vraag die het archief kan beantwoorden: veranderen de **stops** van die ritten,
+of alleen de rijtijd? Als alleen de rijtijd verandert, is dat de directe
+bevestiging dat geen enkele statische geometrie klopt. Dat is met
+`rt-archive/stops/<dag>.parquet` achteraf te meten, zonder de VM.
 
 ## Later, niet urgent
 

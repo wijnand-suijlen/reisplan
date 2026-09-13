@@ -204,6 +204,120 @@ aggregator gewoon draaien.
 | `dataset.tar.zst` | Actions, dagelijks | de VM draait `s5_compress` niet |
 | `randen.json.gz` | de repo | traag bewegende invoer sinds `a58e199` |
 
+## Plan: hoe een baanvak zijn lijnvoering krijgt
+
+Onderzocht 12–13 september 2026, na een vraag over het label op een baanvak tussen
+Weert en Roermond. Niets hiervan is geïmplementeerd.
+
+### Het probleem
+
+`spike/s8_geometrie.py` routeert elk paar opeenvolgende stops met A* over het
+OSM-spoornet. Bij stops die dicht op elkaar liggen gaat dat goed. Bij een **lange
+sprong** — een trein die honderden kilometers geen stop heeft — kiest de A* een
+pad dat over infrastructuur klopt maar niet de route is die de trein rijdt.
+
+Twee gevallen, allebei nachttreinen, allebei uit de dienstregeling geverifieerd:
+
+| trein | sprong | duur |
+|---|---|---|
+| European Sleeper Berlijn–Parijs (NMBS-feed) | Hamburg-Harburg → Bruxelles-Midi | 9 u 16 |
+| Intercités de Nuit Parijs–Toulouse (SNCF-feed) | Les Aubrais → Cahors | 5 u 53 |
+
+De eerste werd over de **IJzeren Rijn** gerouteerd (Weert–Hamont, op Nederlands
+gebied al jaren buiten dienst, in OSM getagd `usage=industrial service=spur
+maxspeed=40 electrified=no`). De tweede over de POLT via Limoges, wat juist
+correct is.
+
+**De schade is beperkt en cosmetisch.** `delta.py` verdeelt waarnemingen over de
+*verfijnde* bladsegmenten, niet over de grove sprong. Gemeten op de snapshot van
+12 september: van de 3.164 randen die alleen door sprongen bereden worden zijn er
+**21 gekleurd** (0,7 %). De IJzeren Rijn is wél getekend en **niet** gekleurd. Het
+foute pad bepaalt dus welke lijnen er op de kaart stáán, niet welke kleuren.
+
+### Vier aanpakken geprobeerd, alle vier stuk op dezelfde grens
+
+| aanpak | lost op | breekt | gemeten |
+|---|---|---|---|
+| A* op afstand (huidig) | — | sluiproutes over dood spoor | IJzeren Rijn |
+| A* op **reistijd** (`lengte/maxspeed`) | IJzeren Rijn verdwijnt | omweg van +222 km via Bordeaux bij Les Aubrais–Cahors | volledige run: 18.865 paden (was 18.577), 235 mislukt (was 569), 49,9 % identiek, mediaan +0,0 km, p90 +0,3 km |
+| randen uitsluiten die **alleen door sprongen** bereden worden | — | hogesnelheidslijnen hebben per definitie geen tussenstations en vallen mee af | 3.164 randen, 15.461 km |
+| **de verfijning volgen** in plaats van het A*-pad | IJzeren Rijn verdwijnt | 177 van de 3.164 verdwijnende randen liggen op spoor van ≥ 200 km/u | zie hierboven |
+
+De rode draad: elke regel die een fout pad wegneemt, neemt ook een terecht pad
+weg. Welke corridor een trein gebruikt staat nergens in de infrastructuurdata.
+Snelheid weegt niet mee dat een nachttrein soms een uur stilstaat en dus helemaal
+niet de snelste route hoeft te nemen.
+
+### Waar het wél in staat: `shapes.txt`
+
+GTFS heeft hier een standaardonderdeel voor: `shapes.txt` geeft per rit de
+werkelijke lijnvoering als polyline. Van de zeven feeds hebben er twee dat, en ze
+staan al op schijf:
+
+| feed | ritten met `shape_id` | unieke shapes | gefilterd |
+|---|---|---|---|
+| `de_delfi` | 154.047 / 154.047 (100 %) | 19.122 | 2,9 MB parquet |
+| `nl` | 39.636 / 39.636 (100 %) | 517 | 3,9 MB parquet |
+
+`be`, `fr`, `ch`, `de_fv` en `de_rv` leveren geen shapes — nagekeken in de
+gedownloade archieven zelf. De SNCF-GTFS die wij ophalen
+(`Export_OpenData_SNCF_GTFS_NewTripId.zip`) bevat acht bestanden en geen shapes,
+ondanks wat zoekresultaten beweren. Voor European Sleeper is geen open data
+gevonden.
+
+**Twee dingen liggen ongebruikt:**
+- `s2_filter_rail.py` filtert de shapes keurig naar `shapes_f`, maar
+  `s3_merge_dedup.py` neemt de tabel niet mee. De kolom `trips.shape_id` overleeft
+  wél — 100 % van de NL-ritten heeft er een — maar er is geen shapes-tabel om hem
+  op te zoeken.
+- **DELFI zit helemaal niet in de merge.** `stop_times` bevat alleen `de_fv` en
+  `de_rv`. De enige Duitse bron mét lijnvoering wordt gedownload, gefilterd en
+  daarna genegeerd.
+
+Potentiële dekking, met 20.490 stationsparen waarvan 4.513 grove sprongen:
+
+| bron | paren | grove sprongen |
+|---|---|---|
+| NL (exact gemeten) | 809 (3,9 %) | 231 (5,1 %) |
+| DE via DELFI (**schatting**, zie hieronder) | 11.148 (54,4 %) | 2.040 (45,2 %) |
+| samen | **11.880 (58,0 %)** | **2.226 (49,3 %)** |
+| rest (BE/FR/CH) — houdt A* | 9.083 (44,3 %) | 2.394 (53,0 %) |
+
+De Duitse 54,4 % is een **kandidaatstelling, geen dekking**: geteld is welke paren
+`de_rv`/`de_fv` bedienen, met de aanname dat DELFI die ook kent. Aannemelijk
+(154.047 ritten tegen 100.823) maar niet gecontroleerd, omdat DELFI's haltes niet
+in `stop_cluster` staan. Dat is pas hard te maken nadat DELFI meegemergd is.
+
+### De voorgestelde volgorde
+
+Per stationspaar, in deze volgorde het pad bepalen:
+
+1. **Heeft de rit een `shape_id`?** Gebruik de shape. Exact, van de vervoerder.
+2. **Rijdt dezelfde trein in een andere feed die wél shapes heeft?** `s3` berekent
+   al 224.316 duplicaat-tripparen; DELFI wordt daar een grote leverancier in.
+3. **Bestaat er een verfijningsketen?** Die is afgeleid uit andere treinen die op
+   de tussenliggende stations stoppen, en had voor Les Aubrais–Cahors de POLT al
+   goed. Alleen niet toepassen waar het pad over een hogesnelheidslijn loopt.
+4. **Anders A***, met de bekende beperkingen.
+
+### Werk dat daarvoor nodig is
+
+- `s3_merge_dedup.py`: de shapes-tabel meenemen in de merge.
+- `s0`/`s2`/`s3`: DELFI in de merge opnemen.
+- `maak_segmenten.py`: shapes verkiezen boven het A*-pad; pas terugvallen op de
+  verfijning en daarna op A*.
+- Meten hoeveel van de Duitse paren DELFI werkelijk dekt, zodra dat kan.
+
+### Nog een artefact met hetzelfde euvel
+
+`cluster_land` komt uit `spike/s4_coverage_intl.py`, die niet in `vernieuw.sh`
+staat. Na de cluster-id-wijziging van 12 september wijzen nog **3.649 van de
+13.511 rijen** naar een bestaand cluster — precies de `uic:`-clusters. Lokaal
+geeft de tabel daardoor stilzwijgend verkeerde antwoorden. Op de VM bestaat hij
+niet en `statisch.py` doet een `LEFT JOIN`, dus productie loopt geen gevaar. Zelfde
+klasse als `randen.json.gz`: een artefact gesleuteld op cluster-id's dat niet
+meeververst. Ofwel s4 in de pijplijn, ofwel de tabel weg.
+
 ## Later, niet urgent
 
 Uit het onderzoek van vandaag, op volgorde van verwachte opbrengst:

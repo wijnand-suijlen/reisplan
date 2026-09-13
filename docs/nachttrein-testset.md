@@ -162,9 +162,14 @@ Sprongen (`ch`): `Amsterdam Centraal → Offenburg` (8,6 u),
 | bron | exploitant (NS International, Wikipedia-loopweg NJ 402/403) |
 
 Let op de valstrik: **Venlo is hier een geldige variant**, terwijl het bij geval 1
-fout is. Een regel die Venlo categorisch uitsluit faalt dus. En een regel die Venlo
-als *de* nachttreinroute naar het zuiden aanneemt legt een vijfjarige omleiding
-vast als wet.
+fout is. Een regel die Venlo categorisch uitsluit faalt dus.
+
+Nagezocht op 13 september: Venlo is hier geen eigenaardigheid van deze trein maar
+**de vaste omleidingsroute van de corridor Arnhem–Emmerich**. Bij de driesporige
+uitbouw Emmerich–Oberhausen worden de internationale treinen vanaf Köln omgeleid
+via Mönchengladbach, Venlo en 's-Hertogenbosch, waarbij Düsseldorf, Duisburg,
+Oberhausen en Arnhem als halte vervallen. Dezelfde omweg reed de TEE Rheingold al
+van 1951 tot 1962. Zie `docs/hsl-omleidingen.md` en `docs/tee-loopwegen.md`.
 
 ## 4. Nightjet Amsterdam – Innsbruck/Wenen
 

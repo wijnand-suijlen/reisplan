@@ -362,6 +362,34 @@ De Duitse 54,4 % is een **kandidaatstelling, geen dekking**: geteld is welke par
 (154.047 ritten tegen 100.823) maar niet gecontroleerd, omdat DELFI's haltes niet
 in `stop_cluster` staan. Dat is pas hard te maken nadat DELFI meegemergd is.
 
+### De omleidingen maken een statische corridor onmogelijk
+
+Nagezocht op 13 september, vastgelegd in `docs/hsl-omleidingen.md`: elke
+hogesnelheidslijn in onze vijf landen heeft een klassieke lijn ernaast die als
+uitwijkroute dienstdoet, en die wordt structureel gebruikt. HSL 1 ligt elke zomer
+twee weken uit dienst, HSL 2 elke zomer tot 2031, de HSL-Zuid 112 dagen in 2028 en
+50 in 2029, en het Duitse *Generalsanierung*-programma legt tot 2035 telkens
+maandenlang een van 41 corridors plat.
+
+Dat raakt dit plan in de kern. Bij een stremming rijdt de Intercity Direct
+Schiphol–Rotterdam over de **Oude Lijn**, en passeert Leiden en Den Haag HS
+**zonder te stoppen**. De feed ziet dan exact dezelfde sprong als anders. Er is
+geen halte, geen rijtijd en geen OSM-tag waarmee de twee gevallen te scheiden zijn.
+
+Daarmee is de HSL-kleuringsfout hierboven niet een bug met een statische
+oplossing: de Oude Lijn is vandaag het verkeerde antwoord en in 2028 **112 dagen
+lang het goede**. Alleen `shapes.txt` volgt een omleiding, want dat wordt per
+dienstregelingsversie opnieuw gepubliceerd.
+
+**Gevolg voor de volgorde hieronder**: de shape-integratie is geen verfijning voor
+NL en DE meer, maar de enige aanpak die principieel klopt. Voor `be`, `fr` en `ch`
+blijft A* nodig en moet de uitkomst expliciet als schatting gelden.
+
+Eén waarschuwing uit hetzelfde onderzoek: straf geen "oud klassiek spoor", want
+élke uitwijkroute is er zo een — de Oude Lijn (1847), de Gotthard Bergstrecke
+(1882), de Lötschberg Bergstrecke (1913), de linke Rheinstrecke. Het bruikbare
+onderscheid is niet *oud* maar *draagt geen doorgaand verkeer meer*.
+
 ### De voorgestelde volgorde
 
 Per stationspaar, in deze volgorde het pad bepalen:

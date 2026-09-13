@@ -460,6 +460,33 @@ niet en `statisch.py` doet een `LEFT JOIN`, dus productie loopt geen gevaar. Zel
 klasse als `randen.json.gz`: een artefact gesleuteld op cluster-id's dat niet
 meeververst. Ofwel s4 in de pijplijn, ofwel de tabel weg.
 
+## Nieuw gat: een ingekorte relatie is geen annulering
+
+Gevonden op 13 september bij het narekenen van de ontsporing bij Cléon van
+11 september; volledig uitgewerkt in `docs/casus-cleon-2026-09-11.md`.
+
+`blockades.py` markeerde het getroffen segment die avond correct als geblokkeerd —
+vier geannuleerde ritten binnen het venster. Maar de dag erna stond er geen enkele
+annulering meer op dat segment, terwijl het spoor de hele dag dicht lag: de treinen
+werden niet geannuleerd maar **opnieuw gepland als een kortere relatie**
+(Caen ↔ Elbeuf-Saint-Aubin in plaats van Caen ↔ Rouen). Een ingekorte relatie
+levert geen `cancel` op.
+
+Het venster van 5400 s liep daardoor rond 22:10 af en de kaart toonde vanaf dat
+moment een normale lijn. Geen valse passage — de blokkade verdampt door
+tijdsverloop.
+
+Dit is dezelfde blinde vlek als bij de omleidingen in `docs/hsl-omleidingen.md`:
+de stops verraden niet dat de infrastructuur veranderd is. Een richting die nog
+uitgewerkt moet worden: een relatie die haar eindpunt verlegt naar een station op
+de eigen route terwijl het weggevallen deel geen passages meer krijgt, is een
+stremming — dat vergt vergelijking tussen dienstregelingsversies, niet een venster
+van anderhalf uur.
+
+Kleiner, uit dezelfde casus: **er is geen alertarchief.** `alerts` en
+`disruptions_sncf` gaan alleen naar de snapshot, niet naar `rt-archive/`, dus de
+tekstuele verklaring van de vervoerder is achteraf niet meer op te halen.
+
 ## Later, niet urgent
 
 Uit het onderzoek van vandaag, op volgorde van verwachte opbrengst:

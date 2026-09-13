@@ -287,6 +287,41 @@ weg. Welke corridor een trein gebruikt staat nergens in de infrastructuurdata.
 Snelheid weegt niet mee dat een nachttrein soms een uur stilstaat en dus helemaal
 niet de snelste route hoeft te nemen.
 
+### Er is nu een testset: `docs/nachttrein-testset.md`
+
+Tot 13 september werd elke variant beoordeeld op één geval (de European Sleeper
+over de IJzeren Rijn), en later op twee. Dat is te weinig: elke aanpak die op één
+geval slaagt, faalt op het volgende. Daarom zijn alle nachttreinen door NL, BE, DE,
+FR en CH nagelopen — 77 sprongen met vertrek tussen 18:00 en 02:00 en een gat van
+meer dan vier uur — en vastgelegd als **vijftien testgevallen met de door de
+vervoerder gepubliceerde route**: welke plaatsen de route moet aandoen en welke
+niet, met bron per regel.
+
+**Elke toekomstige routeervariant wordt hierop beoordeeld, niet op een los geval.**
+Twee daarvan zijn de ijkpunten die elkaar uitsluiten: geval 1 (Hamburg–Brussel,
+moet via Liège) en geval 9 (Les Aubrais–Cahors, moet over de POLT). Geen van de
+vier gemeten varianten haalt beide.
+
+De testset bevat ook een historische laag, teruggezocht tot de jaren zestig en waar
+mogelijk verder. Die levert twee bruikbare feiten:
+
+- **De corridors zijn ouder en stabieler dan de treinen.** Parijs–Liège–Köln–Berlijn
+  ligt er sinds 1896, Amsterdam–Köln–Basel sinds 1928, de POLT sinds 1893, de Ligne
+  des Alpes sinds 1875. Exploitanten wisselen om de paar jaar, het tracé niet.
+- **Over de IJzeren Rijn rijdt sinds 1953 geen doorgaande reizigerstrein meer**
+  (Neerpelt–Hamont sinds 1957; Roermond–grens buiten dienst in 1991). De router
+  kiest dus een verbinding die zeventig jaar dood is, boven een die 130 jaar
+  onafgebroken in gebruik is.
+
+Dat laatste stuurt de vijfde aanpak: de straf hoort niet alleen op `service` en
+`usage` te staan — die variant faalde met factor 10 — maar op de combinatie
+`tracks`, `electrified` en `usage`, en zwaarder. Nog niet gemeten.
+
+De testset corrigeerde meteen drie fouten in de eerste opzet ervan: Grenoble is bij
+Parijs–Briançon géén verboden route maar de omleiding die sinds september 2025
+actief is; Nîmes hoort bij de trein naar Cerbère, niet bij die naar Nice; en de
+Nightjet Zürich–Hamburg rijdt via Bremen.
+
 ### Waar het wél in staat: `shapes.txt`
 
 GTFS heeft hier een standaardonderdeel voor: `shapes.txt` geeft per rit de
@@ -373,10 +408,10 @@ De volgorde is als *prioriteit* verdedigbaar, als *implementatie* niet.
    plan bouwt stap 3 er juist op. `bouw_verfijning` mag een sprong niet op een keten
    leggen die een andere infrastructuur volgt dan de sprong zelf — wat betekent dat
    verfijning en geometrie niet langer onafhankelijk zijn. Ontwerpwijziging.
-2. **De vijfde aanpak meten**: `service=*` en `usage=industrial|military|tourism`
-   uitsluiten in s8. Een middag werk, s8 draait lokaal in 47 s. Verdwijnt de
-   IJzeren Rijn daarmee zonder nieuwe omwegen, dan is de shape-integratie geen
-   urgentie meer maar een verfijning voor NL en DE.
+2. **De vijfde aanpak meten**, nu tegen `docs/nachttrein-testset.md` in plaats van
+   tegen één geval: straf op `tracks`, `electrified` en `usage` in s8. Een middag
+   werk, s8 draait lokaal in 47 s. Haalt een variant alle vijftien gevallen, dan is
+   de shape-integratie geen urgentie meer maar een verfijning voor NL en DE.
 3. **Dit plan herschrijven** op s8 als de plek waar shapes binnenkomen, met de vijf
    bezwaren hierboven als eisen.
 

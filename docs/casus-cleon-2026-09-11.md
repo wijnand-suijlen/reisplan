@@ -97,15 +97,20 @@ De laatste meldingen komen om 23:53 binnen, de allerlaatste om 01:04.
 
 ## De dag erna
 
-Zaterdag 12 september tegen zaterdag 5 september. De twee dagen zijn vergelijkbaar
-(78.951 tegen 79.734 Franse waarnemingen), dus dit is geen meetartefact:
+Niet tegen één referentiedag, maar tegen de hele reeks — twee dagen vergelijken
+is te ruis­gevoelig, zoals de Vogezen-controle onderaan laat zien. Ritten per dag:
 
-| station | za 5 sep | za 12 sep |
-|---|---|---|
-| **Tourville** | 8 | **0** |
-| Elbeuf-Saint-Aubin | 28 | 12 |
-| Brionne / Serquigny / Bernay / Lisieux | 12 / 13 / 31 / 45 | ongewijzigd |
-| Rouen Rive Droite | 125 | **64** |
+| dag | Rouen RD | Tourville | Elbeuf | Caen |
+|---|---|---|---|---|
+| za 29 aug | 127 | 8 | 28 | 76 |
+| za 5 sep | 125 | 8 | 28 | 76 |
+| do 10 sep | 183 | 10 | 52 | 132 |
+| vr 11 sep | 181 | 10 | 51 | 131 |
+| **za 12 sep** | **64** | **0** | **12** | **74** |
+
+Een normale zaterdag geeft Rouen ~126, Tourville 8 en Elbeuf 28. Op 12 september
+is dat 64, **0** en 12, terwijl Caen op 74 blijft staan — precies zoals verwacht
+als de Caen-kant doordraait en het stuk richting Rouen eruit is.
 
 De verklaring staat letterlijk in de `trip_id`'s. Op 5 september reden zes treinen
 per richting **Caen ↔ Rouen** (`87444000 ↔ 87411017`). Op 12 september rijden
@@ -118,38 +123,58 @@ weekend (−49 %, tegen −12 % voor Lille Flandres en −6 % voor Versailles Ch
 
 ## Wat dit over de pijplijn zegt
 
-### `blockades.py` ziet de stremming twee uur, en daarna niet meer
+### Het gat zit tussen de snelle en de langzame detectie
 
-De blokkadedetectie eist twee verschillende geannuleerde ritten op één segment
-binnen `WINDOW_S` (5400 s), en één gerealiseerde passage wist de historie.
+Er zijn twee mechanismen, en Cléon valt tussen beide door.
 
-Op het segment `uic:8741117|uic:8741118` — Elbeuf–Tourville, exact de
-ongevalslocatie — kwamen **vier** geannuleerde ritten binnen (850626, 850628,
-850629, 850631) tussen 20:16:33 en 20:40:44. De drempel werd dus ruim gehaald en
-het segment is die avond correct als geblokkeerd gemarkeerd. Zo hoort het te
-werken.
+**De snelle weg, `blockades.py`**, eist twee verschillende geannuleerde ritten op
+één segment binnen `WINDOW_S` (5400 s). Op `uic:8741117|uic:8741118` —
+Elbeuf–Tourville, exact de ongevalslocatie — kwamen **vier** geannuleerde ritten
+binnen (850626, 850628, 850629, 850631) tussen 20:16:33 en 20:40:44. De drempel
+werd ruim gehaald en het segment is die avond correct als geblokkeerd gemarkeerd.
+Dat werkte dus zoals bedoeld.
 
-**Maar op 12 september staat er geen enkele annulering meer op dat segment.** De
-treinen werden niet geannuleerd, ze werden opnieuw gepland als Caen ↔ Elbeuf. Een
-ingekorte relatie levert geen `cancel` op: het segment komt simpelweg niet meer in
-de dienstregeling voor.
-
-Gevolg: het venster van 5400 s liep rond **22:10 op 11 september** af, en vanaf dat
-moment zag de kaart een normale lijn — terwijl het spoor de hele zaterdag dicht
-lag. Er is geen valse "passage" die de blokkade wist; de blokkade verdampt gewoon
+Maar op 12 september staat er geen enkele annulering meer op dat segment. De
+treinen werden niet geannuleerd maar **opnieuw gepland als kortere relatie**
+(Caen ↔ Elbeuf in plaats van Caen ↔ Rouen). Een ingekorte relatie levert geen
+`cancel` op. Het venster liep dus rond **22:10 op 11 september** af en vanaf dat
+moment zag de kaart een normale lijn. Geen valse passage — de blokkade verdampt
 door tijdsverloop.
 
-Dit is een echt gat, en het is het spiegelbeeld van waar de detectie voor is
-ontworpen. Uitval betekent *"de trein rijdt vandaag niet"*; een ingekorte relatie
-betekent *"deze verbinding bestaat deze week niet"*. Het tweede is het sterkere
-signaal en wordt nu niet opgepikt.
+**De langzame weg, `closure_baseline.py`**, is precies voor dit geval gebouwd: hij
+leidt stremmingen af uit *afwezigheid* in de statische dienstregeling, met een
+baseline van `SAMPLE_DAYS = 35` dagen per dagtype en een `LOOKAHEAD_DAYS = 14`.
+Een ingekorte relatie zou hij dus wel zien. Alleen draait hij in de **wekelijkse**
+ETL, en de aggregator laadt het resultaat bij het starten.
 
-Mogelijke richting, nog niet uitgewerkt: een relatie die van de ene dienstregeling
-op de andere zijn eindpunt verlegt naar een station **op** de eigen route, terwijl
-het weggevallen deel geen enkele passage meer krijgt, is een stremming. Dat vergt
-een vergelijking tussen dienstregelingsversies, niet een venster van anderhalf uur.
-Zie ook `docs/hsl-omleidingen.md`: daar zorgt hetzelfde mechanisme ervoor dat een
-omleiding onzichtbaar blijft in de stops.
+Daar zit het gat. De verversing start maandag 00:00 (`statisch-vernieuwen.timer`).
+Een ongeluk op vrijdagavond is dus zichtbaar zolang de annuleringen binnenkomen —
+hier tot 22:10 — en daarna pas weer vanaf maandagnacht. **Het hele weekend valt
+ertussenuit**, terwijl het spoor dicht lag.
+
+Dit is geen ontwerpfout in een van beide modules; het is een ongedekt interval
+tussen twee cadansen. Denkrichting, nog niet uitgewerkt: `closure_baseline` (of een
+lichte variant ervan) vaker draaien dan wekelijks, of de blokkade laten
+voortduren zolang een segment geen passages krijgt terwijl de baseline er wél
+verkeer verwacht — dat laatste vergt geen nieuwe data, alleen het omdraaien van de
+bewijslast bij het verlopen van het venster.
+
+### Een tweede, grotere blinde vlek: stremmingen langer dan de baseline
+
+`closure_baseline.py` zegt het zelf in zijn docstring: *"closures spanning (nearly)
+the whole feed horizon push the baseline itself to zero and are invisible here — the
+disruption feeds (NS/SNCF/NMBS) are the signal for those."*
+
+Daar is in dit archief een levend voorbeeld van. De lijn
+**Épinal – Saint-Dié-des-Vosges** ligt van **6 juli tot 6 november 2026** volledig
+dicht voor een renovatie van 36 miljoen euro, gefinancierd door de Région Grand Est,
+met bussen in de plaats. Vier maanden is ruim meer dan de 35 dagen baseline, dus de
+majority vote leert dat géén verkeer daar normaal is en de stremming verdwijnt uit
+beeld.
+
+De aangewezen terugval is dan de storingsfeed — en juist die wordt niet gearchiveerd
+(zie hieronder). We kunnen dus achteraf niet eens vaststellen óf SNCF het heeft
+gemeld.
 
 ### Wat wél goed werkte
 
@@ -163,14 +188,22 @@ omleiding onzichtbaar blijft in de stops.
 
 - Van de circa 40 Paris – Rouen – Le Havre-ritten die op 12 september ontbreken
   weet ik niet of dat allemaal doorwerking is of deels een andere oorzaak.
-  Épinal en Saint-Dié-des-Vosges daalden dat weekend met ~36 % zonder enig verband
-  met Normandië, dus er is achtergrondruis.
+- **Gecorrigeerd.** In een eerdere versie stond hier dat Épinal en Saint-Dié
+  dat weekend ~36 % daalden, als voorbeeld van achtergrondruis. Dat was fout: over
+  de hele reeks is Épinal op zaterdag 44 (29 aug), 68 (5 sep) en 44 (12 sep). Niet
+  12 september was afwijkend maar 5 september. De fout kwam voort uit het
+  vergelijken van twee losse dagen in plaats van een reeks — dezelfde methode die
+  ik hierboven voor Normandië heb vervangen. Het lage niveau zelf wordt verklaard
+  door de stremming van 6 juli tot 6 november.
 - Het archief van de lopende dag bestaat nog niet, dus de stand van vandaag is
   hiermee niet te zien.
 - Er is geen alert- of storingsarchief: `alerts` en `disruptions_sncf` gaan alleen
   naar de snapshot, niet naar `rt-archive/`. De tekstuele verklaring van SNCF is
   dus achteraf niet meer op te halen. Dat is een gemis dat deze casus blootlegt.
 
-## Bron van het incident zelf
+## Bronnen
 
 - [Déraillement d'un train entre Rouen et Caen — France 3 Normandie](https://france3-regions.franceinfo.fr/normandie/seine-maritime/rouen/deraillement-d-un-train-entre-rouen-et-caen-le-plan-orsec-nombreuses-victimes-declenche-evitez-le-secteur-3415802.html)
+- [Travaux ligne Épinal – Saint-Dié – Strasbourg, été 2026 — Région Grand Est (PDF)](https://www.grandest.fr/wp-content/uploads/2026/06/06-18-26-cpresse-travaux-ligne-epinal-saint-die-strasbourg-ete-2026.pdf)
+  — 36 miljoen euro, werken 6 juli t/m 6 november 2026, spoorverkeer Épinal –
+  Saint-Dié onderbroken; deeltraject Saint-Dié – Colmar 6 juli t/m 7 augustus.

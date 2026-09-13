@@ -197,9 +197,15 @@ gemeld.
   door de stremming van 6 juli tot 6 november.
 - Het archief van de lopende dag bestaat nog niet, dus de stand van vandaag is
   hiermee niet te zien.
-- Er is geen alert- of storingsarchief: `alerts` en `disruptions_sncf` gaan alleen
-  naar de snapshot, niet naar `rt-archive/`. De tekstuele verklaring van SNCF is
-  dus achteraf niet meer op te halen. Dat is een gemis dat deze casus blootlegt.
+- **Alerts worden nergens bewaard.** Niet in `rt-archive/` (archive.py exporteert
+  precies drie tabellen: `seg`, `stops`, `cancels`) en ook niet in
+  `observaties.sqlite` (`opslag.py` kent alleen `seg_obs`, `stop_obs` en
+  `cancel_obs`). In `main.py` leven ze als `self.incidenten` en
+  `self.alert_groups` — geheugenattributen die alleen de snapshot voeden en bij
+  elke cyclus worden overschreven. De tekstuele verklaring van de vervoerder is dus
+  niet drie dagen houdbaar maar één pollcyclus. Dat is een gemis dat deze casus
+  blootlegt, en het weegt zwaarder door de blinde vlek hierboven: juist bij lange
+  stremmingen is de storingsfeed de aangewezen bron.
 
 ## Bronnen
 

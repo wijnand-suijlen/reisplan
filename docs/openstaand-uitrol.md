@@ -507,9 +507,13 @@ die bijna de hele feed-horizon beslaat duwt zijn eigen baseline naar nul
 Saint-Dié-des-Vosges ligt **6 juli t/m 6 november 2026** volledig dicht. De
 aangewezen terugval is de storingsfeed — en juist die wordt niet gearchiveerd.
 
-Kleiner, uit dezelfde casus: **er is geen alertarchief.** `alerts` en
-`disruptions_sncf` gaan alleen naar de snapshot, niet naar `rt-archive/`, dus
-achteraf is niet eens vast te stellen óf de vervoerder een stremming heeft gemeld.
+Uit dezelfde casus: **alerts worden nergens bewaard.** Niet in `rt-archive/`
+(`archive.py` exporteert alleen `seg`, `stops`, `cancels`) en niet in
+`observaties.sqlite` (`opslag.py` kent alleen `seg_obs`, `stop_obs`, `cancel_obs`).
+Ze leven als geheugenattributen in `main.py` die alleen de snapshot voeden en elke
+cyclus worden overschreven. Achteraf is dus niet vast te stellen óf de vervoerder
+een stremming heeft gemeld — terwijl de storingsfeed juist de aangewezen bron is
+voor stremmingen die langer duren dan de baseline.
 
 ## Twee omleidingen op komst: gratis validatie
 

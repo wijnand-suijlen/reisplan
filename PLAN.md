@@ -134,7 +134,7 @@ Aanpak:
 
 **Verbeterlijst vertragingskaart** *(verzameld tijdens gebruik, 2026-08-10)*:
 1. **Route-highlight bij klik**: klik op een baanvak → licht op welke lijnen/treinseries eroverheen rijden. Voorkomt de misinterpretatie dat aangrenzende gelijkgekleurde baanvakken één treinroute zijn (casus: Stendal–Wittenberge–Berlijn leek één route, maar was IC 57 + Hamburg-corridor + omgeleide Amsterdam–Berlijn-ritten).
-2. **Incident-filter/clustering**: CH publiceert honderden geplande-werkzaamheden-alerts (🚧-wolk); filter op ernst/effect of clustering bij uitzoomen.
+2. **Incident-filter/clustering**: CH publiceert honderden geplande-werkzaamheden-alerts (🚧-wolk); filter op ernst/effect of clustering bij uitzoomen. *(2026-09-13, besluit eigenaar: geen losse iconen meer voor werkzaamheden — `CONSTRUCTION`/`MAINTENANCE` — want die staan al als gestippelde baanvakken op de kaart. Filter zit in de viewer, niet in de aggregator: de snapshot draagt ze nog. De rest van de incidentweergave hangt nu af van "Plan: verkeersinformatie vastleggen" hieronder.)*
 3. **Dekkingsnuance "gastdata"**: DE kleurt deels via doorgaande treinen uit de NL/BE/CH-feeds terwijl het paneel "geen bron" zegt — toon dit als aparte status ("alleen internationale treinen").
 4a. ✅ **Rand-gebaseerde aggregatie** *(gebouwd 2026-08-10, op verzoek eigenaar)*: de kaart kleurt niet langer per stationspaar maar per fysieke spoorrand (dissolve van de OSM-paden in s8; 27k getekende randen). Alle drie de dubbeltekening-oorzaken uit de s9-inventaris (onverfijnde expresses, duplicaat-stations, gedeelde corridors) zijn daarmee per constructie van de kaart verdwenen; duplicaat-clusters blijven wel een dataprobleem voor de reisplanner zelf (naamnormalisatie-verbeteringen blijven op de ETL-lijst).
 4. ~~**v2-geometrie**~~ ✅ *Gebouwd 2026-08-10* (`spike/s8_geometrie.py`): OSM-spoorgraaf uit Geofabrik-extracten (6 landen, 4,1 M knopen → 617k randen), stations gesnapt (≤1500 m), 18.658 van 20.626 baanvakken over het echte spoor gerouteerd (A*, tolerantie 2,2×; 572 fallback-rechte-lijnen). Output `paar_geometrie.json.gz` (2 MB) gaat via R2 naar de VM. Herdraaien alleen nodig als het stationsbestand wezenlijk wijzigt.
@@ -174,6 +174,63 @@ Twee doelen, één component: (A) het realtime-archief op de VM opwaarderen tot 
 **Risico's/meetpunten**: fchg-responsegrootte per station meten vóór de tier-groottes vastliggen (verwachting 50–300 KB bij grote stations; bepaalt of ~2,3k req/uur qua bandbreedte/CPU op de e2-micro past — verwachting: ruim); DB kan free-limieten eenzijdig wijzigen (ToU); rchg-varianten (elke 2 min, kleiner) zijn een optimalisatie voor later.
 
 **Flankerend, los van realtime**: de statische merge van DE overzetten van gtfs.de op DELFI (nagemeten 2026-08-10: past ruim; geeft ook treinnummers — die maken de IRIS-matching robuuster) en dan s3/s5 herdraaien voor de nieuwe totaalgrootte van de vijflanden-dataset.
+
+### Plan: verkeersinformatie vastleggen (alerts, storingen, oorzaken) *(opgesteld 2026-09-13)*
+
+**Uitgangspunt (eigenaar, 2026-09-13).** Alle informatie over vertragingen en hun oorzaken wordt vastgelegd, zodat het statistische vertragingsmodel van fase 2 die kan gebruiken. De vertragingskaart toont de verkeersinformatie van alle landen op één homogene manier, zodat zichtbaar is óf we de juiste informatie vastleggen. Gevolg: **filteren gebeurt alleen in de weergave, nooit bij het vastleggen.** Een melding die niet op de kaart hoort — een werkzaamhedenalert, "voitures hors quai", een melding voor volgende week — komt wél in het archief.
+
+**Stand nu.** Er wordt niets bewaard (zie `213e309` en `docs/casus-cleon-2026-09-11.md`). Alerts leven als `self.incidenten`/`self.alert_groups` één pollcyclus in het geheugen; `archive.py` exporteert alleen `seg`, `stops` en `cancels`. Hetzelfde geldt voor de NS- en SNCF-storingsfeeds. De DB-oorzaakcodes worden al opgehaald maar weggegooid.
+
+**Wat de bronnen leveren** *(gemeten 2026-09-13, zondagmiddag/-avond)*:
+
+| bron | omvang | waar een melding aan hangt | oorzaak |
+|---|---|---|---|
+| NL — OVapi GTFS-RT alerts | ~135 alerts, 0,07 MB | halte, vaak plus `route_id` | vrijwel altijd `UNKNOWN_CAUSE`/`MAINTENANCE`; de NS-storingen-API is de rijke NL-bron |
+| FR — SNCF GTFS-RT alerts | ~440 alerts, 1 MB | verstoringen **alleen trip**: treinnummer (`OCESN17311F`), zonder `start_date`; alleen de stationsmededelingen hebben ook haltes (62 van 434) | `UNKNOWN`/`OTHER`/`MAINTENANCE`; de echte oorzaak staat alleen in de tekst |
+| CH — opentransportdata GTFS-SA (JSON) | ~1.600 alerts, 16,6 MB JSON / 7,5 MB protobuf | halte, trip mét `startDate`, of route; elke gebeurtenis als tripalert én haltealert | 997 `CONSTRUCTION`, 563 `OTHER_CAUSE` |
+| BE — NMBS GTFS-RT alerts (JSON) | ~48 alerts | **alleen vervoerder**; traject staat in de kop ("Gent-Sint-Pieters - Aalst"), geen `active_period` | 47 van 48 `CONSTRUCTION` |
+| DE — DB Timetables `fchg` | al gepolld, 402 stations | `<m>`-elementen per trein en per halte, dus direct aan trip plus dienstdag | **gestructureerde oorzaakcodes** (`t="d"`, `c="43"`, …); daarnaast `t="h"` (HIM-storingen met from/to), `f`, `c`, `q`. Frankfurt Hbf alleen al: 1.341 berichten, 214 met vertragingscode |
+
+Drie inhoudelijke bevindingen die het ontwerp raken:
+- **`active_period` is geen "nu".** CH geeft een omhullende: "S8 valt uit Effretikon–Winterthur" heeft 13 sep 22:35 → 17 sep 05:20, terwijl het werk *jeweils* 's nachts is. Van de CH-werkzaamheden die volgens de periode actief zijn, loopt 226 langer dan 30 dagen. 391 zijn nog niet begonnen. Het echte ritme staat alleen in de beschrijving.
+- **Wat op de kaart kwam was een scheve selectie.** De huidige code plaatst alleen alerts met een `stop_id`. In FR zijn dat juist de stationsmededelingen (54× "Rijtuigen buiten het perron": de trein is langer dan het perron; 8× kaartautomaat/lift defect). De 195 actieve verstoringen ("De trein heeft vertraging", "TER supprimé", "Dérangement d'un passage à niveau") hangen alleen aan een trip en vielen weg. De vertraging zelf kleurt wel mee via de trip updates; wat ontbrak is de verklaring.
+- **Voor het model telt de tripkoppeling, niet de kaartpositie.** `stop_obs2` en `cancel_obs` hebben al `trip_id` en `service_date`. Een oorzaak die aan een concrete trein hangt is precies wat een vertragingsmodel nodig heeft.
+
+**Ontwerp in vier lagen:**
+
+1. **Vastleggen (aggregator, op de VM) — ruw en ongefilterd.**
+   - Tabel `alert_versions` in `observaties.sqlite`: `source` (`nl-alerts`, `fr-alerts`, `ch-alerts`, `be-alerts`, `ns-disruptions`, `sncf-disruptions`), `country`, `alert_id`, `content_hash`, `first_seen`, `gone_ts` (leeg zolang de melding in de feed staat), `payload` (BLOB: het geserialiseerde GTFS-RT-`Alert`-bericht, of de ruwe JSON van een storing). Alle vertalingen en de volledige `informed_entity` blijven erin.
+   - Een nieuwe rij alleen bij een nieuwe of gewijzigde melding; verdwijnt ze, dan `gone_ts` zetten. Het verloop is klein: in 15–25 minuten NL 2 weg, FR 19 nieuw/10 weg/1 gewijzigd, CH 1 nieuw/20 weg. De dedup-toestand is een dict `alert_id → 64-bit-hash` per bron (enkele duizenden sleutels) en wordt bij het opstarten opgewarmd uit de rijen zonder `gone_ts`. Anders logt een herstart alles opnieuw met `first_seen=nu` — dezelfde valkuil als bij `stop_obs2` (zie `opslag.py`).
+   - Tabel `de_messages`: `service_date`, `trip_id`, `cluster`, `msg_id`, `type` (`d`/`h`/`f`/`c`/`q`), `code`, `category`, `valid_from`, `valid_to`, `ts`, `first_seen`. Dedup op `msg_id` plus trip plus halte. Kost geen extra requests: de berichten zitten al in de `fchg`-responses die `db_timetables.py` verwerkt.
+2. **Archiveren.** `archive.py` krijgt `rt-archive/alerts/<dag>.parquet` en `rt-archive/de-messages/<dag>.parquet`. Een melding komt in elke dag waarin ze in de feed stond (`first_seen`…`gone_ts`). Op de VM geldt dezelfde retentie van 3 dagen als voor de observaties; R2 is de duurzame kopie.
+3. **Koppelen en classificeren — offline, over het archief** (laptop of Actions, niet op de VM). Beide stappen zijn afgeleid en krijgen een versienummer, zodat een betere regel later het hele archief opnieuw kan doorrekenen.
+   - *Koppeling* per land naar `(country, trip_id, service_date)`, `cluster` of rand. CH: `trip_id` plus `startDate` direct. FR: treinnummer uit de alert tegen het `OCESN<nummer>F`-voorvoegsel van de TU-trip-id's (13 sep: 410 van de 1.248 treinen in de TU-feed hebben een alert); de dienstdag uit `active_period` ∩ dienstregeling. NL: halte plus route plus tijdvenster. BE: trajectnaam → keten → randen (bestaat al in `alert_closures.py`). DE: al gekoppeld.
+   - *Classificatie* naar een eigen, landonafhankelijke set, bijvoorbeeld: `vertraging-oorzaak`, `uitval`, `werkzaamheden`, `stremming`, `stationsinfo`, `drukte`, `overig`. De `cause`-enum van de bron is daarvoor onbruikbaar (FR: vrijwel altijd onbekend), dus het werk zit in tekstregels per bron. Voor CH ook het werkelijke ritme uit de "jeweils von … bis …"-zinnen.
+4. **Weergave (kaart).** Op de VM een lichte versie van de classificatie (bronregels, geen archiefwerk) die de snapshot voedt:
+   - iconen alleen voor wat nu geldt, ontdubbeld op tekst plus plaats;
+   - geen iconen voor werkzaamheden (al gebouwd);
+   - `stationsinfo` als uitschakelbare laag in plaats van weggegooid;
+   - FR-tripalerts een positie geven via de haltes van de gekoppelde trein;
+   - een **dekkingsoverzicht per land**: aantal meldingen per categorie en welk deel aan een trip gekoppeld is. Dat is het controle-instrument uit het uitgangspunt: het laat meteen zien dat BE geen tripkoppeling heeft en dat DE-oorzaken (nog) ontbreken.
+
+**Geheugen (VM, 1 GB) — eerst meten, dan bouwen.**
+- **Nu al een piek:** de CH-feed is 16,6 MB JSON. `parse_feed` doet `json.loads` plus `ParseDict`: lokaal gemeten ~100 MB Python-heap en +286 MB RSS, elke 10 minuten. Daarbovenop parseert `main.py` elke alertfeed **twee keer** (`verwerk_alerts` en daarna `edge_groups_from_alerts(parse_feed(pb))`, ook voor landen waar die functie direct `[]` teruggeeft).
+  - Snelle winst, los van dit plan: één keer parsen.
+  - Voor het vastleggen per entiteit hashen en serialiseren zonder de hele boom tweemaal vast te houden. Streaming JSON (`ijson`) is de terugvaloptie als de piek te hoog blijft. De protobufvariant van het CH-endpoint is volgens `config.py` corrupt; opnieuw proberen, want 7,5 MB protobuf parseert veel zuiniger.
+  - Deze piek staat nog niet in `docs/geheugen-op-1gb.md`; daar bijschrijven met een meting op de VM (trap A, `diagnostics.py`).
+- De dedup-toestand is verwaarloosbaar (enkele duizenden ints). Het schrijven gaat in batches per poll.
+
+**Volume** *(schatting op basis van één zondagmeting; doordeweeks meten)*: FR ~1.700 versies/dag × ~2,3 KB ≈ 4 MB ruw, CH ~2.000 × ~4,7 KB ≈ 9 MB, NL/BE verwaarloosbaar. Parquet met zstd drukt de sterk herhalende teksten fors. DE-berichten zijn onbekend: `msg_id` is netbreed, dus hetzelfde bericht op meerdere stations telt één keer, maar dat moet gemeten worden. R2 (10 GB) is ruim.
+
+**Volgorde:**
+1. Snelle winst: alertfeeds één keer parsen; CH-piek op de VM meten en in het geheugenrapport zetten.
+2. `alert_versions` voor de vier GTFS-RT-alertbronnen plus de NS- en SNCF-storingen, met opwarmen na herstart. Een etmaal draaien en volume en geheugen meten.
+3. `de_messages` uit `fchg`. Pas na een meting van het extra geheugen in `db_timetables.py`; dat is de module waar de laatste onbegrensde container zat.
+4. Export naar `rt-archive/`.
+5. Offline koppeling en classificatie, gevalideerd tegen bekende casussen: Cléon (11 sep) en de twee aangekondigde omleidingen uit `docs/openstaand-uitrol.md`.
+6. Kaart: categorieën, actief-filter, ontdubbelen, FR-tripposities, dekkingsoverzicht.
+
+**Open voor de eigenaar:** hoe lang de ruwe payload bewaard blijft. Voorstel: onbeperkt op R2, gezien het volume. En of `stationsinfo` (perron, lift, kaartautomaat) standaard aan of uit staat op de kaart.
 
 **Fase 1 — MVP (Planmodus, 5 landen)**
 1. Backend-ETL: rail-only GTFS van 5 landen mergen tot één compacte dataset (productieversie van de fase-0-spike)

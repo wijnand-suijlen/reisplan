@@ -16,8 +16,11 @@ const WERK_LABEL = {
   intl: "🌍 internationale verbinding gestremd",
 };
 const WERK_RANG = { closed: 3, intl: 2, reduced: 1 };
+// Works are already drawn as dotted edges (snap.wrk); an icon per alert would only
+// duplicate them. Presentation filter only: the snapshot still carries these alerts.
+const WORKS_CAUSES = new Set(["CONSTRUCTION", "MAINTENANCE"]);
 const CAUSE_ICOON = {
-  ACCIDENT: "💥", TECHNICAL_PROBLEM: "🔧", CONSTRUCTION: "🚧", MAINTENANCE: "🚧",
+  ACCIDENT: "💥", TECHNICAL_PROBLEM: "🔧",
   STRIKE: "✊", WEATHER: "🌧️", MEDICAL_EMERGENCY: "🚑", POLICE_ACTIVITY: "🚓",
   DEMONSTRATION: "📢", HOLIDAY: "📅", UNKNOWN_CAUSE: "⚠️", OTHER_CAUSE: "⚠️",
 };
@@ -162,7 +165,7 @@ let incidentMarkers = [];
 function toonIncidenten(incidenten) {
   // DOM-markers i.p.v. symbol-layer: emoji renderen onafhankelijk van kaart-glyphs
   for (const m of incidentMarkers) m.remove();
-  incidentMarkers = incidenten.map((i) => {
+  incidentMarkers = incidenten.filter((i) => !WORKS_CAUSES.has(i.cause)).map((i) => {
     const el = document.createElement("span");
     el.className = "incident";
     el.textContent = CAUSE_ICOON[i.cause] || "⚠️";

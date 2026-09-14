@@ -13,8 +13,8 @@ Doorlopende lijst van wat openstaat, voor Claude en voor de eigenaar.
 
 ## Met een datum
 
-- [ ] **Cadansmeting over een etmaal** (zondag 13 sep; de verversing van
-      zaterdag vervuilt een eerdere meting) — of alle taken op de VM hun bedoelde
+- [ ] **Cadansmeting over een etmaal** (zondag 13 sep; staat sinds 14 sep in
+      R2; de verversing van zaterdag vervuilt een eerdere meting) — of alle taken op de VM hun bedoelde
       ritme halen na de ingrepen van 12 september (agents uit, buildvenster
       gehalveerd, dekkende index). Achtergrond: `docs/geheugen-op-1gb.md`.
 
@@ -37,24 +37,6 @@ Doorlopende lijst van wat openstaat, voor Claude en voor de eigenaar.
       zelf. Voor de echte vraag — haalt elke taak zijn bedoelde ritme — is dit
       genoeg om de uitschieters te vinden, en pas daarna is de VM nodig.
 
-- [ ] **Maandag 14 september na ~02:25: de tweede clusteringronde op de kaart
-      controleren.** Wat er veranderde: `docs/verslag-2026-09-12.md`, "Tweede
-      ronde". De verversing start zondag 22:00 UTC (= maandag 00:00 lokaal) en
-      publiceert de nieuwe `segments.geojson` zodra de aggregator ná de mergefase
-      opstart — naar de fasetijden van 12 september rond 02:25 lokaal, klaar rond
-      04:25. Wat er dan moet kloppen:
-
-      | meting | nu op de VM | verwacht |
-      |---|---|---|
-      | rechte-lijn-fallbacks | 2.130 van 29.158 (7,3 %) | ~1.738 van ~28.553 (**6,1 %**) |
-      | clusters | 13.515 | ~13.408 |
-      | clusterparen binnen 300 m | ~660 | ~627 |
-
-      Let ook op: tussen ~02:25 en ~04:25 draait de aggregator met de nieuwe
-      `merged.duckdb` maar nog de oude `eva_stations.json` (s10 draait in de
-      laatste fase). De Duitse dekking is in dat venster dun; dat hoort zo en de
-      afsluitende herstart dicht het.
-
 - [ ] **Twee omleidingen meten als gratis validatie.** De vraag: veranderen de
       **stops** van die ritten, of alleen de rijtijd? Als alleen de rijtijd
       verandert, is dat de directe bevestiging dat geen enkele statische geometrie
@@ -74,13 +56,20 @@ Doorlopende lijst van wat openstaat, voor Claude en voor de eigenaar.
       `docs/geheugen-op-1gb.md`.
 - [ ] **Verkeersinformatie vastleggen**, stappen 2–6 van hetzelfde plan.
 - [ ] **`planned_closures` nakijken.** Stond na de uitrol van 12 september op
-      12.375 rand-dag-blokken tegen 3.255 lokaal. Als de kaart veel rode
+      12.375 rand-dag-blokken, na de verversing van 14 september op 10.554, tegen
+      3.255 lokaal. Als de kaart veel rode
       puntjeslijnen toont, is dat het eerste om te onderzoeken. Geen bewijs dat het
       fout is.
 - [ ] **De HSL-kleuringsfout oplossen** (ontwerpwijziging), **de vijfde
       routeeraanpak meten** tegen `docs/nachttrein-testset.md`, en daarna **het
       lijnvoeringsplan herschrijven**. `docs/lijnvoering.md`, "Wat er eerst moet
       gebeuren".
+- [ ] **s8 elke week laten meedraaien.** De geometrie veroudert met elke
+      verversing (14 sep: 360 extra rechte lijnen door één week feedwijzigingen);
+      `docs/verslag-2026-09-14.md`. Het kan niet op de VM (4,3 GB piek); wel in
+      Actions (47 s), maar dan op andere feeds dan de VM een paar uur later
+      binnenhaalt. Ontwerpkeuze: s8 in Actions na de merge, de routering
+      cumulatief maken (paren van eerdere weken behouden), of beide.
 - [ ] **`cluster_land`:** s4 in de pijplijn of de tabel weg.
       `docs/lijnvoering.md`, "Nog een artefact met hetzelfde euvel".
 - [ ] **Het ongedekte interval tussen blokkade en baseline**, en stremmingen die
@@ -120,9 +109,6 @@ Op volgorde van verwachte opbrengst:
 - **`VACUUM` op `observaties.sqlite`** — nu niet nodig. De dekkende index heeft de
   vrije lijst opgesoupeerd (0 vrije pagina's) en het hete leespad raakt de tabel
   niet meer aan.
-- **s8 opnieuw draaien** is alleen nodig als de stationsset wezenlijk wijzigt — nu
-  de id's stabiel zijn, klopt die aanname uit PLAN.md weer. Het kan niet op de VM
-  (4,3 GB piek, gemeten); het kan lokaal in 47 s, of in GitHub Actions.
 - **`docs/vm-beheer.md`** bijwerken met de twee nieuwe units
   (`reisplan-aggregator-herstart.service` en `.timer`) en de gewijzigde starttijd van de verversing
   (maandag 00:00 lokaal; het spiekbriefje zegt nog 04:30 UTC).

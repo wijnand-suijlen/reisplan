@@ -188,9 +188,16 @@ def main() -> None:
             # werkzaamheden: disruption-feeds + BE-alerts; het generieke baseline-
             # signaal vult aan waar geen feed iets meldt (rijkere info wint)
             werk = [g for d in disrupties for g in d.groups]
-            werk += [g for b in actief for g in getattr(b, "alert_groups", [])]
+            closed_now = closures.active_edges(nu)
+            # BE alerts carry no active period: the dates are only in the prose
+            # ("weekends van 12-13 en 19-20/09"). An alert therefore only labels
+            # edges the timetable itself shows closed right now.
+            for b in actief:
+                for src, sev, until, txt, edges in getattr(b, "alert_groups", []):
+                    if confirmed := edges & closed_now:
+                        werk.append((src, sev, until, txt, confirmed))
             gedekt = {rand for *_, randen in werk for rand in randen}
-            plan_randen = closures.active_edges(nu) - gedekt
+            plan_randen = closed_now - gedekt
             if plan_randen:
                 # nul geplande treinen tegen de baseline = volledige sluiting
                 werk.insert(0, ("plan", "closed", None, None, sorted(plan_randen)))

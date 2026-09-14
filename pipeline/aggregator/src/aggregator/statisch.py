@@ -1,8 +1,9 @@
 """Statische lookups uit de spike-output (merged.duckdb): stop -> cluster, clusterinfo."""
 
+import heapq
+import math
 import os
 import unicodedata
-from collections import deque
 from dataclasses import dataclass
 
 import duckdb
@@ -16,6 +17,12 @@ def normalize_name(name: str) -> str:
     name = unicodedata.normalize("NFKD", name)
     name = "".join(c for c in name if not unicodedata.combining(c))
     return " ".join(name.casefold().replace("-", " ").split())
+
+
+# How far off the straight u -> b line a station may lie and still count as on the
+# way (Statisch._through_edges). This bounds the station's position, not a detour:
+# Maarn lies within 0.5 % of the Driebergen-Zeist -> Veenendaal-De Klomp line.
+ON_ROUTE_FACTOR = 1.1
 
 
 @dataclass
@@ -111,7 +118,7 @@ class Statisch:
             nl = [cid for cid, feeds in opties if "nl" in feeds.split(",")]
             self.cluster_by_name[key] = (opties[0][0] if len(opties) == 1
                                          else nl[0] if len(nl) == 1 else None)
-        self._adjacency: dict[str, set[str]] | None = None
+        self._adjacency: dict[str, list[tuple[str, float]]] | None = None
 
     def trip_segments(self, feed_prefix: str, rt_trip_id: str) -> list[str]:
         """Fine segments along a static trip — for feeds that cancel a trip without
@@ -152,8 +159,9 @@ class Statisch:
         """Drawn edges along a chain of station clusters (disruption sections).
 
         Refinement covers express jumps; for pairs no scheduled train serves
-        directly (e.g. a months-long closure has no through trains left in the
-        feed) a hop-limited BFS over the leaf-segment graph bridges the gap.
+        directly (stopping trains only, or a closure that left no through trains in
+        the feed) the shortest path over the leaf-segment graph bridges the gap,
+        and failing that a segment that runs past one of the two stations.
         Returns (edges, unmapped pair descriptions) so the caller can log."""
         edges: set[str] = set()
         unmapped: list[str] = []
@@ -161,52 +169,118 @@ class Statisch:
             if a == b:
                 continue
             segment = segment_id(a, b)
-            parts = [fijn for fijn, _ in self.verfijn(segment)]
-            found = [rand for p in parts for rand in self.randen(p)]
+            found = self._segment_edges(segment)
             if not found:
-                found = [rand for p in self._bfs_path(a, b) for rand in self.randen(p)]
+                found = [rand for p in self._leaf_path(a, b) for rand in self.randen(p)]
+            if not found:
+                found = self._through_edges(a, b)
             if found:
                 edges.update(found)
             else:
                 unmapped.append(segment)
         return edges, unmapped
 
-    def _bfs_path(self, a: str, b: str, max_hops: int = 25) -> list[str]:
-        """Shortest hop-path a->b over the leaf-segment graph, as segment ids."""
+    def _segment_edges(self, segment: str) -> list[str]:
+        return [rand for fijn, _ in self.verfijn(segment) for rand in self.randen(fijn)]
+
+    def _through_edges(self, a: str, b: str) -> list[str]:
+        """Edges between a and b when no train runs from one to the other and the
+        only leaf path doubles back.
+
+        Maarn - Veenendaal-De Klomp (NS lists every station along the track):
+        intercities pass Maarn without stopping, the stopping trains that call
+        there branch off to Veenendaal West. Maarn's only other neighbour is
+        Driebergen-Zeist, behind it. So take the segment from such a neighbour u to
+        the far station, provided the near station lies on the way (u -> a -> b no
+        longer than ON_ROUTE_FACTOR times u -> b), and drop the edges it shares
+        with u - a. Edges are dissolved stretches of track and one may run past a
+        in a single piece; the result can then reach back towards u, never past it.
+        """
+        adj = self._leaf_adjacency()
+        candidates = []
+        for near, far in ((a, b), (b, a)):
+            for u, km_u_near in adj.get(near, []):
+                if u == far:
+                    continue
+                km_u_far = self._km(u, far)
+                if km_u_near + self._km(near, far) <= ON_ROUTE_FACTOR * km_u_far:
+                    candidates.append((km_u_far, u, near, far))
+        for _, u, near, far in sorted(candidates):
+            shared = set(self._segment_edges(segment_id(u, near)))
+            rest = [rand for rand in self._segment_edges(segment_id(u, far))
+                    if rand not in shared]
+            if rest:
+                return rest
+        return []
+
+    def _leaf_path(self, a: str, b: str) -> list[str]:
+        """Shortest a->b path over the leaf-segment graph, in km, as segment ids.
+
+        A disruption section is a contiguous stretch of track heading one way, so
+        the search only steps to stations closer to b than the current one. That
+        rule is also what rejects detours: when the line itself is absent from the
+        feed, any path over another line has to move away from b somewhere, and
+        the result is no path instead of a wrong one.
+
+        Hop count is not a usable distance: on 14 Sep 2026 "Mol - Hasselt" (eight
+        stopping-train hops) mapped onto Mol > Leuven > Hasselt, two express
+        segments, and painted Lier - Mol and Aarschot - Diest closed."""
         adj = self._leaf_adjacency()
         if a not in adj or b not in adj:
             return []
-        prev: dict[str, str | None] = {a: None}
-        queue: deque[tuple[str, int]] = deque([(a, 0)])
+        to_b = {a: self._km(a, b)}
+        dist = {a: 0.0}
+        prev: dict[str, str] = {}
+        queue = [(0.0, a)]
         while queue:
-            node, dist = queue.popleft()
+            d, node = heapq.heappop(queue)
             if node == b:
                 path = []
-                while prev[node] is not None:
+                while node != a:
                     path.append(segment_id(prev[node], node))
                     node = prev[node]
                 return path
-            if dist >= max_hops:
+            if d > dist[node]:
                 continue
-            for nxt in adj[node]:
-                if nxt not in prev:
+            for nxt, km in adj[node]:
+                if nxt not in to_b:
+                    to_b[nxt] = self._km(nxt, b)
+                if to_b[nxt] < to_b[node] and d + km < dist.get(nxt, math.inf):
+                    dist[nxt] = d + km
                     prev[nxt] = node
-                    queue.append((nxt, dist + 1))
+                    heapq.heappush(queue, (d + km, nxt))
         return []
 
-    def _leaf_adjacency(self) -> dict[str, set[str]]:
+    def _leaf_adjacency(self) -> dict[str, list[tuple[str, float]]]:
+        """Stations joined by leaf segments, weighted by great-circle distance.
+        Express segments with a refinement are left out: they would let a path
+        jump past the stations of the line it is supposed to follow."""
         if self._adjacency is None:
-            segments = set(self.segment_randen)
+            segments = {s for s in self.segment_randen if s not in self.verfijning}
             for bladen in self.verfijning.values():
                 segments.update(fijn for fijn, _ in bladen)
-            adj: dict[str, set[str]] = {}
+            adj: dict[str, list[tuple[str, float]]] = {}
             for segment in segments:
                 a, _, b = segment.partition("|")
-                adj.setdefault(a, set()).add(b)
-                adj.setdefault(b, set()).add(a)
+                ca, cb = self.clusters.get(a), self.clusters.get(b)
+                if ca is None or cb is None or ca.lat is None or cb.lat is None:
+                    continue
+                km = self._km(a, b)
+                adj.setdefault(a, []).append((b, km))
+                adj.setdefault(b, []).append((a, km))
             self._adjacency = adj
         return self._adjacency
 
+    def _km(self, a: str, b: str) -> float:
+        ca, cb = self.clusters[a], self.clusters[b]
+        return haversine_km(ca.lat, ca.lon, cb.lat, cb.lon)
 
 def segment_id(cluster_a: str, cluster_b: str) -> str:
     return "|".join(sorted((cluster_a, cluster_b)))
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    h = (math.sin((p2 - p1) / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2)
+    return 12742.0 * math.asin(math.sqrt(h))

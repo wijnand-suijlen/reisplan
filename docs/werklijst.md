@@ -37,6 +37,14 @@ Doorlopende lijst van wat openstaat, voor Claude en voor de eigenaar.
       zelf. Voor de echte vraag — haalt elke taak zijn bedoelde ritme — is dit
       genoeg om de uitschieters te vinden, en pas daarna is de VM nodig.
 
+- [ ] **Zaterdag 19 september: Belgische werkzaamheden op de kaart nakijken.**
+      Sinds 14 sep toont de kaart een NMBS-melding alleen waar de dienstregeling
+      nul treinen heeft (`docs/verslag-2026-09-14.md`). In de vooruitblik werden
+      van de weekendmeldingen Opwijk – Jette en Brussel-Luxemburg – Ottignies niet
+      zichtbaar. Nagaan of de NMBS-feed de vervangende bus niet in de dienstregeling
+      heeft, of dat de werkzaamheden maar één spoor raken. Charleroi – Maubeuge (FR)
+      is los daarvan niet op stations te koppelen (de "(FR)"-suffix).
+
 - [ ] **Twee omleidingen meten als gratis validatie.** De vraag: veranderen de
       **stops** van die ritten, of alleen de rijtijd? Als alleen de rijtijd
       verandert, is dat de directe bevestiging dat geen enkele statische geometrie

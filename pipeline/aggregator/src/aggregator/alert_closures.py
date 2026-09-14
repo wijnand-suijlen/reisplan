@@ -7,7 +7,12 @@ So we parse every language variant, split on " - ", and match the normalized nam
 against the Belgian clusters — the fr variant usually matches clusters.naam
 ("Liège-Guillemins"), the nl one ("Luik-Guillemins") usually does not. Endpoints
 that are no station ("Franse grens") or single-station alerts are skipped: point
-incidents are already on the map via `inc`."""
+incidents are already on the map via `inc`.
+
+Without a period, an alert says nothing about *when*: on 14 Sep 2026 fifteen of the
+sixteen NO_SERVICE alerts were for later weekends. main.py therefore only shows an
+alert on edges that planned_closures has closed at that moment; the alert supplies
+the text, the timetable the timing."""
 
 from google.transit import gtfs_realtime_pb2
 

@@ -372,7 +372,10 @@ class DbTimetablesSource:
 
     # -- main-loop interface ---------------------------------------------------
 
-    def poll(self, statisch: Statisch, opslag, blokkades) -> None:
+    def poll(self, statisch: Statisch, opslag, blokkades,
+             closed_edges: frozenset[str] = frozenset()) -> None:
+        # closed_edges (NS/SNCF closures) is not applied here yet: IRIS reports
+        # per station, not per trip update, so there is no hop to test it against
         now = time.time()
         if not self.stations:
             self.volgende = now + 300

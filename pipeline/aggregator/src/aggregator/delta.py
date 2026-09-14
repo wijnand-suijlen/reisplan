@@ -67,7 +67,8 @@ def _event_time(stu) -> int | None:
     return None
 
 
-def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
+def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch,
+                        closed_edges: frozenset[str] = frozenset()):
     """Returns (seg_obs, stop_obs, cancels, passages).
 
     cancels: (fine segment, trip, service_date) triples for cancelled trips and
@@ -75,6 +76,14 @@ def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
     time in the past, or no time given — most feeds only carry near-term updates).
     Both feed the blockade tracker; a passage is what clears a blockade. Cancels are
     also persisted (opslag.bewaar_cancels) so the inspection page can show them.
+
+    closed_edges: drawn edges an operator's disruption feed reports closed. A closed
+    stretch is taken as closed even when the trip update still lists the full
+    service: on 14 Sep 2026 NS had "no trains between Putten and Nunspeet" while
+    OVapi kept SPR 5669 scheduled through Ermelo and Harderwijk to Zwolle, on time,
+    and the map coloured the closure green. A fine segment lying entirely on closed
+    edges counts as cancelled, and a stop with closed segments on every side as not
+    served.
     """
     feed = parse_feed(pb_bytes)
     nu = time.time()
@@ -83,6 +92,11 @@ def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
     cancels: list[tuple[str, str, str]] = []
     passages: list[str] = []
     vandaag = time.strftime("%Y%m%d", time.gmtime())
+
+    def closed(fijn: str) -> bool:
+        edges = statisch.randen(fijn)
+        return bool(edges) and all(edge in closed_edges for edge in edges)
+
     for ent in feed.entity:
         if not ent.HasField("trip_update"):
             continue
@@ -111,14 +125,30 @@ def verwerk_tripupdates(pb_bytes: bytes, feed_prefix: str, statisch: Statisch):
             if d is None:
                 continue
             expliciet.append((cluster, d, _event_time(stu)))
-            stop_obs.append(StopObs(trip_id, cluster, d, service_date))
+        # per hop between explicit stops: None for a same-cluster hop, else whether
+        # the whole hop runs over closed edges
+        hop_closed: list[bool | None] = []
         for (c1, d1, _t1), (c2, d2, t2) in zip(expliciet, expliciet[1:]):
-            if c1 != c2:
-                delta = d2 - d1
-                gerealiseerd = t2 is None or t2 <= nu
-                # expresse-sprong uitsmeren over de fijne baanvakken (naar rato van lengte)
-                for fijn, fractie in statisch.verfijn(segment_id(c1, c2)):
-                    seg_obs.append(SegObs(fijn, trip_id, round(delta * fractie)))
-                    if gerealiseerd:
-                        passages.append(fijn)
+            if c1 == c2:
+                hop_closed.append(None)
+                continue
+            delta = d2 - d1
+            gerealiseerd = t2 is None or t2 <= nu
+            # expresse-sprong uitsmeren over de fijne baanvakken (naar rato van lengte)
+            fijne = statisch.verfijn(segment_id(c1, c2))
+            hop_closed.append(bool(closed_edges) and all(closed(fijn) for fijn, _ in fijne))
+            for fijn, fractie in fijne:
+                if closed_edges and closed(fijn):
+                    cancels.append((fijn, trip_id, service_date))
+                    continue
+                seg_obs.append(SegObs(fijn, trip_id, round(delta * fractie)))
+                if gerealiseerd:
+                    passages.append(fijn)
+        for i, (cluster, d, _t) in enumerate(expliciet):
+            around = [h for h in (hop_closed[i - 1] if i > 0 else None,
+                                  hop_closed[i] if i < len(hop_closed) else None)
+                      if h is not None]
+            if around and all(around):
+                continue  # between two closed stretches: this train does not call here
+            stop_obs.append(StopObs(trip_id, cluster, d, service_date))
     return seg_obs, stop_obs, cancels, passages

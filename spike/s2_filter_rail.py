@@ -74,16 +74,31 @@ def filter_feed(feed):
     con.execute(f"CREATE TABLE routes_f AS SELECT * FROM routes WHERE {RAIL_FILTER}")
     con.execute("CREATE TABLE trips_f AS SELECT * FROM trips SEMI JOIN routes_f USING (route_id)")
     con.execute("CREATE TABLE stop_times_f AS SELECT * FROM stop_times SEMI JOIN trips_f USING (trip_id)")
+    # Realtime feeds add trips over stops no scheduled trip uses: NS runs its
+    # replacement trains (SPR 305669 for a short-turned 5669) over the platform-less
+    # generic quay of each station, 2993550 "Nunspeet" next to platforms 2993551/2.
+    # Dropping those made 58 of 70 added NS trips unmappable (14 Sep 2026). So keep
+    # every stop (location_type 0) of a station that is kept anyway; entrances and
+    # generic nodes stay out — in DELFI they are 29k rows.
+    stop_cols = {r[0] for r in con.execute("SELECT column_name FROM (DESCRIBE stops)").fetchall()}
+    is_stop = ("coalesce(s.location_type, '') IN ('', '0')" if "location_type" in stop_cols
+               else "true")
     con.execute(
-        """CREATE TABLE stops_f AS
+        f"""CREATE TABLE stops_f AS
            WITH gebruikt AS (SELECT DISTINCT stop_id FROM stop_times_f),
-           incl_parent AS (
+           parents AS (
+             SELECT DISTINCT s.parent_station AS stop_id FROM stops s SEMI JOIN gebruikt USING (stop_id)
+             WHERE s.parent_station IS NOT NULL AND s.parent_station <> ''
+           ),
+           keep AS (
              SELECT stop_id FROM gebruikt
              UNION
-             SELECT s.parent_station FROM stops s SEMI JOIN gebruikt USING (stop_id)
-             WHERE s.parent_station IS NOT NULL AND s.parent_station <> ''
+             SELECT stop_id FROM parents
+             UNION
+             SELECT s.stop_id FROM stops s SEMI JOIN parents p ON s.parent_station = p.stop_id
+             WHERE {is_stop}
            )
-           SELECT s.* FROM stops s SEMI JOIN incl_parent USING (stop_id)"""
+           SELECT s.* FROM stops s SEMI JOIN keep USING (stop_id)"""
     )
     con.execute("CREATE TABLE agency_f AS SELECT DISTINCT a.* FROM agency a SEMI JOIN routes_f ON a.agency_id = routes_f.agency_id")
 

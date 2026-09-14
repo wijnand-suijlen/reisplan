@@ -46,14 +46,15 @@ class Bron:
         self.incidenten: list[dict] = []
         self.alert_groups: list = []  # werkzaamheden uit alerts (BE), zie alert_closures
 
-    def poll(self, statisch: Statisch, opslag: Opslag, blokkades: BlockadeTracker) -> None:
+    def poll(self, statisch: Statisch, opslag: Opslag, blokkades: BlockadeTracker,
+             closed_edges: frozenset[str] = frozenset()) -> None:
         cfg = self.cfg
         try:
             if cfg.tu_url:
                 pb = self._haal(cfg.tu_url)
                 if pb is not None:
                     seg_obs, stop_obs, cancels, passages = verwerk_tripupdates(
-                        pb, cfg.feed_prefix, statisch)
+                        pb, cfg.feed_prefix, statisch, closed_edges)
                     nieuw = opslag.bewaar(cfg.land, seg_obs, stop_obs)
                     opslag.bewaar_cancels(cfg.land, cancels)
                     nu = time.time()
@@ -162,9 +163,13 @@ def main() -> None:
     volgende_snapshot = 0.0
     while True:
         nu = time.time()
+        # what the operators' disruption feeds report closed overrides the trip
+        # updates: a train listed over a closed stretch does not run there
+        closed_edges = frozenset(edge for d in disrupties for _src, sev, *_, edges in d.groups
+                                 if sev == "closed" for edge in edges)
         for bron in actief:
             if bron.cfg.enabled and nu >= bron.volgende:
-                bron.poll(statisch, opslag, blokkades)
+                bron.poll(statisch, opslag, blokkades, closed_edges)
         for disruptie in disrupties:
             if nu >= disruptie.volgende:
                 disruptie.poll(statisch)

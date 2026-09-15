@@ -37,13 +37,6 @@ Doorlopende lijst van wat openstaat, voor Claude en voor de eigenaar.
       zelf. Voor de echte vraag — haalt elke taak zijn bedoelde ritme — is dit
       genoeg om de uitschieters te vinden, en pas daarna is de VM nodig.
 
-- [ ] **Dinsdag 15 september, na de eenmalige verversing: vervangende NS-treinen
-      nakijken.** De verversing van de nacht van 14 op 15 september neemt de
-      s2-wijziging mee (`docs/verslag-2026-09-14.md`, "Putten – Nunspeet"). Controleren
-      dat `nl:2993550` in `stop_cluster` staat, dat treinen met een 30xxxx-nummer in de
-      inspectietool verschijnen, en dat de fallback- en clustercijfers niet
-      verschoven zijn ten opzichte van 14 september (13.400 clusters).
-
 - [ ] **Zaterdag 19 september: Belgische werkzaamheden op de kaart nakijken.**
       Sinds 14 sep toont de kaart een NMBS-melding alleen waar de dienstregeling
       nul treinen heeft (`docs/verslag-2026-09-14.md`). In de vooruitblik werden
@@ -124,6 +117,8 @@ Op volgorde van verwachte opbrengst:
 - **`VACUUM` op `observaties.sqlite`** — nu niet nodig. De dekkende index heeft de
   vrije lijst opgesoupeerd (0 vrije pagina's) en het hete leespad raakt de tabel
   niet meer aan.
+- **Treinnummer van toegevoegde NS-ritten** in de inspectietool: nu de volledige
+  rit-id (`2026-09-15:IFF:IC:300661`); daaruit valt `IC 300661` te halen.
 - **`docs/vm-beheer.md`** bijwerken met de twee nieuwe units
   (`reisplan-aggregator-herstart.service` en `.timer`) en de gewijzigde starttijd van de verversing
   (maandag 00:00 lokaal; het spiekbriefje zegt nog 04:30 UTC).

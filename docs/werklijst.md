@@ -78,6 +78,11 @@ Doorlopende lijst van wat openstaat, voor Claude en voor de eigenaar.
       Actions (47 s), maar dan op andere feeds dan de VM een paar uur later
       binnenhaalt. Ontwerpkeuze: s8 in Actions na de merge, de routering
       cumulatief maken (paren van eerdere weken behouden), of beide.
+- [ ] **s2 weer snel maken.** Sinds de perron-wijziging duurt het filteren ruim een
+      uur langer (ch 1.990 → 3.274 s) en schuift de stilstand van de aggregator op.
+      Vermoedelijk `stops` één keer materialiseren. `docs/verslag-2026-09-14.md`,
+      "Eenmalige verversing". Vóór zondag 20 september, anders loopt de wekelijkse
+      verversing tegen de ochtend aan.
 - [ ] **`cluster_land`:** s4 in de pijplijn of de tabel weg.
       `docs/lijnvoering.md`, "Nog een artefact met hetzelfde euvel".
 - [ ] **Het ongedekte interval tussen blokkade en baseline**, en stremmingen die
